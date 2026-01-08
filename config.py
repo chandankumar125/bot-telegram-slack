@@ -1,0 +1,5 @@
+TELEGRAM_BOT_TOKEN = "BOT_TOKEN"
+SLACK_BOT_TOKEN = "xoxb-***"
+SLACK_SIGNING_SECRET = "****"
+VIBELETS_API_KEY = "vibelets-key"
+VIBELETS_BASE_URL = "https://preprod.vibelets.ai/api"
