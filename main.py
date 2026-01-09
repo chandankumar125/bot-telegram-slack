@@ -1,12 +1,12 @@
 from fastapi import FastAPI
-from telegram import telegram_webhook
-from slack import slack_events
+from routers import telegram, slack, notifications
 
-app = FastAPI()
+app = FastAPI(title="Vibelets Bot Service")
 
-app.post("/bot/telegram/webhook")(telegram_webhook)
-app.post("/bot/slack/events")(slack_events)
+app.include_router(telegram.router, prefix="/bot/telegram")
+app.include_router(slack.router, prefix="/bot/slack")
+app.include_router(notifications.router, prefix="/bot")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/health")
+def health():
+    return {"status": "ok"}
