@@ -9,12 +9,28 @@ def handle_event(payload):
         return {"challenge": payload.challenge}
     
     event = payload.event
-    if not event or not event.text:
+    if not event:
         return {"ok": True}
     
-    reply = resolve_query(event.channel, event.text)
+    # Only process message events
+    if event.type != "message":
+        return {"ok": True}
+    
+    # Ignore bot messages to avoid infinite loops
+    if hasattr(event, "bot_id") and event.bot_id:
+        return {"ok": True}
+    
+    # Ignore messages without text
+    if not event.text:
+        return {"ok": True}
+    
+    # Get user_id from event (use user field if available, otherwise use channel)
+    user_id = getattr(event, "user", event.channel)
+    
+    reply = resolve_query(user_id, event.text)
     send_message(event.channel, reply)
     return {"ok": True}
+
 
 def send_message(channel_id: str, text: str):
     try:

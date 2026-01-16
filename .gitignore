@@ -1,0 +1,59 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+.env.*
+secrets.json
+secrets.yaml
+secrets.yml
+config.local.py
+*.key
+*.pem
+*.p12
+*.pfx
+
+# API Keys and Tokens (additional protection)
+**/tokens/
+**/keys/
+**/credentials/
+*.token
+*.secret
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# ngrok
+ngrok.exe
+ngrok
+*.ngrok
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup

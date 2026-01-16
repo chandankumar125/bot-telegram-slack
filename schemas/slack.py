@@ -3,10 +3,13 @@ from typing import Optional
 
 class SlackEvent(BaseModel):
     type: str
-    text: Optional[str]
-    channel: Optional[str]
+    text: Optional[str] = None
+    channel: Optional[str] = None
+    user: Optional[str] = None
+    bot_id: Optional[str] = None
 
 class SlackEventWrapper(BaseModel):
     type: str
-    challenge: Optional[str]
-    event: Optional[SlackEvent]
+    challenge: Optional[str] = None
+    event: Optional[SlackEvent] = None
+    token: Optional[str] = None  # Slack also sends a token field
