@@ -3,5 +3,4 @@ uvicorn
 pydantic
 requests
 slack-sdk
-python-telegram-bot
 python-dotenv

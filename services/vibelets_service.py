@@ -27,13 +27,5 @@ def push_notification(payload):
         # Local import to avoid circular dependency with slack_service
         from services.slack_service import send_message as slack_send_message
         return slack_send_message(payload.channel_id, msg)
-    elif payload.platform == "telegram":
-        # Local import to avoid circular dependency with telegram_service
-        from services.telegram_service import send_message as telegram_send_message
-        return telegram_send_message(payload.channel_id, msg)
-    elif payload.platform == "whatsapp":
-        # Local import to avoid circular dependency with whatsapp_service
-        from services.whatsapp_service import send_message as whatsapp_send_message
-        return whatsapp_send_message(payload.channel_id, msg)
     
     return {"status": "failed", "reason": "Unsupported platform"}
