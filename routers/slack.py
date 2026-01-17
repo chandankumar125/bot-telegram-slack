@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/install")
 def install_bot(user_id: str = "unknown"):
-    """
+    """ 
     Initiates the Slack OAuth flow.
     Frontend 'Connect' button should link here: /bot/slack/install?user_id=123
     """
@@ -38,7 +38,7 @@ def install_bot(user_id: str = "unknown"):
     return RedirectResponse(auth_url)
 
 @router.get("/oauth_callback")
-def oauth_callback(code: str, state: str = None):
+async def oauth_callback(code: str, state: str = None):
     """
     Handles the callback from Slack after user authorizes the app.
     Exchanges code for access token.
@@ -47,7 +47,7 @@ def oauth_callback(code: str, state: str = None):
         raise HTTPException(status_code=400, detail="Missing code parameter")
 
     # Exchange code for token
-    response = requests.post(
+    response = await requests.post(
         "https://slack.com/api/oauth.v2.access",
         data={
             "client_id": SLACK_CLIENT_ID,
