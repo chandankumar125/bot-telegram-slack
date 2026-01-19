@@ -17,6 +17,7 @@ FastAPI Bot Backend  <-- YOU ARE HERE
   ┌─────┴──────┐
   ▼            
 Slack App
+
 ```
 
 ## Features
@@ -45,7 +46,7 @@ Slack App
     ```bash
     uvicorn main:app --reload --port 8000
     ```
-    
+
     Expose via Ngrok for Slack development:
     ```bash
     .\ngrok.exe http 8000

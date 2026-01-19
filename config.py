@@ -11,5 +11,7 @@ SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
 SLACK_REDIRECT_URI = os.getenv("SLACK_REDIRECT_URI", "https://preprod.vibelets.ai/bot/slack/oauth_callback")
 
 VIBELETS_API_KEY = os.getenv("VIBELETS_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 VIBELETS_BASE_URL = os.getenv("VIBELETS_BASE_URL", "https://preprod.vibelets.ai/api")
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:8000/dashboard/")
 

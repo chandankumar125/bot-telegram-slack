@@ -6,6 +6,7 @@ Usage:
 
 Example:
     python send_test_notification.py C1234567890 "Test Alert" "This is a test"
+
 """
 
 import requests

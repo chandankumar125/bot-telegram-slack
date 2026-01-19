@@ -10,9 +10,16 @@ This button should point to your backend endpoint:
 
 ```
 https://<YOUR_BOT_DOMAIN>/bot/slack/install?user_id=<CURRENT_USER_ID>
+or
+
+<a href="https://api.vibelets.ai/bot/slack/install?user_id=VL_12345">
+  Connect Slack
+</a>
+
+
 ```
 
-### 2. Redirect to Slack
+### 2. Redirect to Slack: Backend – Install Endpoint: routes/slack.py
 *   The backend redirects the user to `slack.com/oauth/v2/authorize`.
 *   The user sees the consent screen: "Vibelets Bot wants to access your workspace..."
 *   User clicks "Allow".

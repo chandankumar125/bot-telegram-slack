@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibelets | Integrations</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/app.js" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">Vibelets</div>
+        <nav>
+            <a href="#" class="nav-item">
+                <span>📊</span> Dashboard
+            </a>
+            <a href="#" class="nav-item">
+                <span>🚀</span> Campaigns
+            </a>
+            <a href="#" class="nav-item active">
+                <span>🔌</span> Integrations
+            </a>
+            <a href="#" class="nav-item">
+                <span>⚙️</span> Settings
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="header">
+            <h1>Integrations</h1>
+            <p>Connect your tools to power up your Vibelets experience.</p>
+        </header>
+
+        <section class="integrations-grid">
+            <!-- Slack Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="slack-logo">
+                        <img src="https://cdn.icon-icons.com/icons2/2699/PNG/512/slack_logo_icon_169736.png" alt="Slack" width="32" height="32">
+                    </div>
+                    <div class="card-title">
+                        <h3>Slack</h3>
+                        <span>Popular</span>
+                    </div>
+                </div>
+                <p class="card-desc">
+                    Receive real-time alerts about your ad capabilities, fatigue warnings, and chat with your data directly from Slack.
+                </p>
+                <div class="card-actions">
+                    <a href="#" id="slack-connect-btn" class="btn-connect">Connect Slack</a>
+                    <div class="status-indicator">
+                        <div class="dot"></div>
+                        <span class="status-text">Not Connected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Placeholder for other integrations -->
+            <div class="card" style="opacity: 0.5; pointer-events: none;">
+                <div class="card-header">
+                    <div class="slack-logo" style="background: #e1f5fe;">
+                         <!-- Meta/Facebook Logo placeholder -->
+                        <span style="font-size: 24px;">♾️</span>
+                    </div>
+                    <div class="card-title">
+                        <h3>Meta Ads</h3>
+                        <span>Core</span>
+                    </div>
+                </div>
+                <p class="card-desc">
+                    Your ad accounts are automatically synced via your core setup.
+                </p>
+                <div class="card-actions">
+                    <div class="status-indicator">
+                        <div class="dot" style="background: #2ea043; box-shadow: 0 0 8px #2ea043;"></div>
+                        <span class="status-text" style="color: #2ea043;">Connected</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visualization of the Flow -->
+        <section class="flow-visualization">
+            <h2 class="flow-title">How Slack Integration Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-icon">👀</div>
+                    <h4>Monitor</h4>
+                    <p>Engine tracks ad stats.</p>
+                </div>
+                <div class="step">
+                    <div class="step-icon">⚡</div>
+                    <h4>Detect</h4>
+                    <p>Threshold breach found.</p>
+                </div>
+                <div class="step">
+                    <div class="step-icon">🔔</div>
+                    <h4>Notify</h4>
+                    <p>Alert sent to Slack.</p>
+                </div>
+                <div class="step">
+                    <div class="step-icon">💬</div>
+                    <h4>Interact</h4>
+                    <p>Ask AI why it happened.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="toast"></div>
+
+</body>
+</html>

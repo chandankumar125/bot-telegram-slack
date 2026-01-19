@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from routers import slack, notifications
 from config import VIBELETS_API_KEY, SLACK_BOT_TOKEN
 import logging
@@ -22,6 +23,9 @@ async def startup_event():
 
 app.include_router(slack.router, prefix="/bot/slack")
 app.include_router(notifications.router, prefix="/bot")
+
+# Mount Dashboard Frontend
+app.mount("/dashboard", StaticFiles(directory="static", html=True), name="dashboard")
 
 @app.get("/health")
 def health():

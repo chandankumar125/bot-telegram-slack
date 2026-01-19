@@ -2,8 +2,11 @@ from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from schemas.slack import SlackEventWrapper
 from services.slack_service import handle_event
-from config import SLACK_SIGNING_SECRET, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REDIRECT_URI
+from config import SLACK_SIGNING_SECRET, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REDIRECT_URI, DASHBOARD_URL
 from utilis.security import verify_slack_signature
+from utils.db import save_slack_connection, get_slack_connection, disconnect_slack_connection
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 import time
 import json
 import requests
@@ -38,41 +41,109 @@ def install_bot(user_id: str = "unknown"):
     return RedirectResponse(auth_url)
 
 @router.get("/oauth_callback")
-async def oauth_callback(code: str, state: str = None):
+def oauth_callback(code: str, state: str = None):
     """
     Handles the callback from Slack after user authorizes the app.
-    Exchanges code for access token.
+    Exchanges code for access token and saves to DB.
     """
     if not code:
         raise HTTPException(status_code=400, detail="Missing code parameter")
 
     # Exchange code for token
-    response = await requests.post(
-        "https://slack.com/api/oauth.v2.access",
-        data={
-            "client_id": SLACK_CLIENT_ID,
-            "client_secret": SLACK_CLIENT_SECRET,
-            "code": code,
-            "redirect_uri": SLACK_REDIRECT_URI
-        }
-    )
-    
-    data = response.json()
+    try:
+        response = requests.post(
+            "https://slack.com/api/oauth.v2.access",
+            data={
+                "client_id": SLACK_CLIENT_ID,
+                "client_secret": SLACK_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": SLACK_REDIRECT_URI
+            }
+        )
+        data = response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to communicate with Slack: {str(e)}")
     
     if not data.get("ok"):
         raise HTTPException(status_code=400, detail=f"OAuth failed: {data.get('error')}")
 
-    # Success! 
-    # In a real app, you would now:
-    # 1. Parse 'state' to get the Vibelets 'user_id'
-    # 2. Store the 'access_token', 'team_id', and 'bot_user_id' in your database linked to that user.
+    # Extract info
+    access_token = data.get("access_token")
+    team = data.get("team", {})
+    team_id = team.get("id")
+    team_name = team.get("name")
+    bot_user_id = data.get("bot_user_id")
     
-    # For now, we redirect back to the dashboard with a success flag
+    # Extract User ID of the installing user
+    authed_user = data.get("authed_user", {})
+    slack_user_id = authed_user.get("id")
+    
+    # Parse state to get user_id
     vibelets_user_id = state.split(":")[0] if state else "unknown"
+
+    # Save to "Database"
+    save_slack_connection(vibelets_user_id, team_id, team_name, access_token, bot_user_id, slack_user_id)
+    
+    # Send Welcome Message to the User
+    if slack_user_id:
+        try:
+            client = WebClient(token=access_token)
+            welcome_msg = (
+                f"👋 *Hello! I'm the Vibelets Bot.*\n"
+                f"✅ **You are now successfully connected!**\n"
+                f"I can help you with insights about your ad campaigns.\n\n"
+                f"• Ask me questions like _'How is my campaign performing?'_\n"
+            )
+            client.chat_postMessage(channel=slack_user_id, text=welcome_msg)
+        except SlackApiError as e:
+            print(f"Failed to send welcome message: {e}")
     
     return RedirectResponse(
-        f"https://preprod.vibelets.ai/dashboard/settings/integrations?status=success&platform=slack&uid={vibelets_user_id}"
+        f"{DASHBOARD_URL}?status=success&platform=slack&uid={vibelets_user_id}&team={team_name}"
     )
+
+@router.post("/disconnect")
+def disconnect_bot(user_id: str):
+    """
+    Disconnects the user from Slack by removing their connection details.
+    """
+    # 1. Get connection info BEFORE disconnecting (to send goodbye msg)
+    connection = get_slack_connection(user_id)
+    if connection and connection.get("connected"):
+        try:
+            team_id = connection.get("team_id")
+            slack_user_id = connection.get("slack_user_id")
+            
+            # Get token to send message
+            from utils.db import get_team_token
+            token = get_team_token(team_id)
+            
+            if token and slack_user_id:
+                client = WebClient(token=token)
+                goodbye_msg = (
+                    f"⚠️ *You have been disconnected.*\n"
+                    f"You will valid notifications anymore.\n"
+                    f"If this was a mistake, you can reconnect from the dashboard."
+                )
+                client.chat_postMessage(channel=slack_user_id, text=goodbye_msg)
+        except Exception as e:
+            print(f"Failed to send goodbye message: {e}")
+
+    # 2. Perform Disconnect
+    success = disconnect_slack_connection(user_id)
+    if success:
+        return {"ok": True, "message": "Disconnected successfully"}
+    return {"ok": False, "message": "User not connected or user not found"}
+
+@router.get("/status")
+def get_connection_status(user_id: str):
+    """
+    Checks if the user is connected to Slack.
+    """
+    connection = get_slack_connection(user_id)
+    if connection and connection.get("connected"):
+        return {"connected": True, "team_name": connection.get("team_name")}
+    return {"connected": False}
 
 # --- Event Handling ---
 
