@@ -73,4 +73,28 @@ Slack App
 - **Connect**: Type `connect` to get a link to link your Vibelets account.
 - **Query**: "What is my CPA for campaign X?"
 
+1. The Handshake (OAuth)
+Request: Your backend sends your client_id, client_secret, and the temporary code (received from the browser redirect) to Slack's API https://slack.com/api/oauth.v2.access.
+Response: Slack verifies these and returns a JSON payload containing the access keys.
 
+2. The Data Fetched (Response from Slack)
+From that response, your code extracts these 5 specific pieces of information:
+
+Data Field	Description
+access_token	The Key. This is the permanent password your bot uses to post messages, read channels, etc.
+team_id	The unique ID of the Slack Workspace (e.g., T0123456).
+team_name	The human-readable name of the workspace (e.g., "Adsparkx").
+bot_user_id	The User ID of your bot inside that workspace (e.g., U0987654). This helps the bot know when it is being mentioned versus someone else.
+authed_user	(Currently unused by your code, but available). The ID of the specific user who clicked "Install".
+
+3. The Data Stored (Your Database)
+Your 
+utils/db.py
+ saves this data into db.json in two places:
+
+Users Table (db["users"]):
+Links your local user (VL_TEST_USER_001) to the Slack Team ID (Txxxx).
+Stores connected: True and team_name.
+Teams Table (db["teams"]):
+Stores the sensitive access_token linked to the team_id.
+This is separated so multiple users from the same company can use the same bot connection without needing multiple tokens.

@@ -1,88 +1,35 @@
-"""
-Quick script to send a test notification to Slack
-
-Usage:
-    python send_test_notification.py <channel_id> [title] [summary]
-
-Example:
-    python send_test_notification.py C1234567890 "Test Alert" "This is a test"
-
-"""
-
-import requests
 import sys
-import time
-import json
+import os
 
-BASE_URL = "http://localhost:8000"
+# Ensure backend directory is in path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def send_notification(channel_id: str, title: str = None, summary: str = None):
-    """Send a test notification to Slack"""
+from services.slack_service import send_notification
+from utils.db import get_slack_connection
+
+def test_alert():
+    user_id = "VL_TEST_USER_001"
     
-    if not channel_id:
-        print("❌ Error: Channel ID is required")
-        print("\nUsage: python send_test_notification.py <channel_id> [title] [summary]")
-        print("\nTo find your channel ID:")
-        print("  - Right-click channel in Slack → View channel details")
-        print("  - Or use: https://api.slack.com/methods/conversations.list")
-        return False
+    print(f"Fetching connection details for {user_id}...")
+    connection = get_slack_connection(user_id)
     
-    payload = {
-        "alert_id": f"test-{int(time.time())}",
-        "platform": "slack",
-        "channel_id": channel_id,
-        "title": title or "🚀 Test Notification",
-        "summary": summary or "This is a test notification from the Vibelets bot. Try asking a question about this alert!"
-    }
+    if not connection or not connection.get("connected"):
+        print("❌ User is not connected to Slack.")
+        return
+
+    team_id = connection.get("team_id")
+    slack_user_id = connection.get("slack_user_id")
     
-    print(f"📤 Sending notification to channel: {channel_id}")
-    print(f"   Title: {payload['title']}")
-    print(f"   Summary: {payload['summary']}")
-    print()
+    print(f"✅ Found Connection: Team {team_id}, User {slack_user_id}")
+    print("🚀 Sending test alert...")
     
-    try:
-        response = requests.post(
-            f"{BASE_URL}/bot/notify",
-            json=payload,
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("ok") or result.get("status") == "sent":
-                print("✅ Notification sent successfully!")
-                print(f"\n📬 Check your Slack channel: {channel_id}")
-                print("💡 Try asking a question like:")
-                print("   - 'What caused this alert?'")
-                print("   - 'Tell me more about this'")
-                print("   - 'Why did this happen?'")
-                return True
-            else:
-                print(f"❌ Notification failed: {json.dumps(result, indent=2)}")
-                return False
-        else:
-            print(f"❌ Request failed with status {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-            
-    except requests.exceptions.ConnectionError:
-        print("❌ Error: Cannot connect to server")
-        print("   Make sure your server is running:")
-        print("   uvicorn main:app --reload --port 8000")
-        return False
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return False
+    result = send_notification(
+        team_id=team_id,
+        channel_id=slack_user_id,
+        text="🚀 *Test Alert*: If you see this, the notification system is working perfectly!"
+    )
+    
+    print(f"Result: {result}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python send_test_notification.py <channel_id> [title] [summary]")
-        print("\nExample:")
-        print('  python send_test_notification.py C1234567890 "Server Alert" "CPU usage is high"')
-        sys.exit(1)
-    
-    channel_id = sys.argv[1]
-    title = sys.argv[2] if len(sys.argv) > 2 else None
-    summary = sys.argv[3] if len(sys.argv) > 3 else None
-    
-    send_notification(channel_id, title, summary)
+    test_alert()

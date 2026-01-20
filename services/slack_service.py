@@ -1,10 +1,11 @@
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from config import SLACK_BOT_TOKEN, DASHBOARD_URL
+from config import SLACK_BOT_TOKEN, DASHBOARD_URL, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET
 from services.vibelets_service import resolve_query
-from utils.db import get_team_token, get_vibelets_user_by_slack_id
+from utils.db import get_vibelets_user_by_slack_id, get_team_data, update_team_token
 import logging
-
+import time
+import requests
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -12,8 +13,62 @@ logger = logging.getLogger(__name__)
 # Default client for main workspace (fallback)
 default_client = WebClient(token=SLACK_BOT_TOKEN)
 
+def ensure_valid_token(team_id: str):
+    """
+    Checks if token is expired and refreshes if needed.
+    Returns valid access_token.
+    """
+    team_data = get_team_data(team_id)
+    if not team_data:
+        return None
+    
+    access_token = team_data.get("access_token")
+    expires_at = team_data.get("expires_at")
+    refresh_token = team_data.get("refresh_token")
+    
+    # If no expiry info, it's a legacy non-expiring token
+    if not expires_at or not refresh_token:
+        return access_token
+    
+    # Check if expired (with 5 minute buffer)
+    if time.time() > (expires_at - 300):
+        logger.info(f"Token for team {team_id} expired/expiring. Refreshing...")
+        
+        try:
+            response = requests.post(
+                "https://slack.com/api/oauth.v2.access",
+                data={
+                    "client_id": SLACK_CLIENT_ID,
+                    "client_secret": SLACK_CLIENT_SECRET,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token
+                }
+            )
+            data = response.json()
+            
+            if data.get("ok"):
+                 new_access_token = data.get("access_token")
+                 new_refresh_token = data.get("refresh_token")
+                 new_expires_in = data.get("expires_in")
+                 
+                 update_team_token(team_id, new_access_token, new_refresh_token, new_expires_in)
+                 logger.info(f"Token refreshed successfully for team {team_id}")
+                 return new_access_token
+            else:
+                logger.error(f"Failed to refresh token: {data.get('error')}")
+                # Fallback to existing token (might fail)
+                return access_token
+                
+        except Exception as e:
+            logger.error(f"Error during token refresh: {e}")
+            return access_token
+
+    return access_token
+
 def get_client_for_team(team_id: str):
-    token = get_team_token(team_id)
+    # Use the smart token retriever
+    token = ensure_valid_token(team_id)
+    
     if token:
         logger.info(f"Using team-specific token for team {team_id}")
         return WebClient(token=token)
@@ -34,7 +89,7 @@ def handle_event(payload):
     if not event:
         return {"ok": True}
         
-    # Extract event details
+    # Extract event details; Extract Slack ID:
     team_id = payload.team_id
     event = payload.event
     event_type = event.type
@@ -117,3 +172,13 @@ def send_message(client: WebClient, channel_id: str, text: str):
     except Exception as e:
         logger.error(f"Unexpected Error sending Slack message: {str(e)}")
         return {"ok": False, "error": str(e)}
+
+def send_notification(team_id: str, channel_id: str, text: str):
+    """
+    Sends a proactive notification to a specific team and channel/user.
+    Can be called from other modules.
+    """
+    client = get_client_for_team(team_id)
+    if client:
+        return send_message(client, channel_id, text)
+    return {"ok": False, "error": "Team not connected"}

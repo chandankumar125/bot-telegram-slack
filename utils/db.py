@@ -17,7 +17,9 @@ def _save_db(data: Dict):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def save_slack_connection(user_id: str, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str = None):
+import time
+
+def save_slack_connection(user_id: str, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str = None, refresh_token: str = None, expires_in: int = None):
     db = _load_db()
     
     # 1. Save User mapping
@@ -30,21 +32,49 @@ def save_slack_connection(user_id: str, team_id: str, team_name: str, access_tok
             "team_id": team_id,
             "team_name": team_name,
             "bot_user_id": bot_user_id,
-            "slack_user_id": slack_user_id  # Save this!
+            "slack_user_id": slack_user_id
         }
     }
 
-    # 2. Save Team Token independently (for Multi-Tenant/Universal Access)
+    # 2. Save Team Token independently
     if "teams" not in db:
         db["teams"] = {}
     
+    # Calculate expiry if provided
+    expires_at = None
+    if expires_in:
+        expires_at = int(time.time()) + expires_in
+
+    # Store everything
     db["teams"][team_id] = {
         "access_token": access_token,
         "team_name": team_name,
-        "bot_user_id": bot_user_id
+        "bot_user_id": bot_user_id,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at
     }
     
     _save_db(db)
+
+def update_team_token(team_id: str, access_token: str, refresh_token: str, expires_in: int):
+    """
+    Updates the token after a refresh.
+    """
+    db = _load_db()
+    if "teams" in db and team_id in db["teams"]:
+        expires_at = int(time.time()) + expires_in
+        
+        db["teams"][team_id]["access_token"] = access_token
+        db["teams"][team_id]["refresh_token"] = refresh_token
+        db["teams"][team_id]["expires_at"] = expires_at
+        _save_db(db)
+        return True
+    return False
+
+def get_team_data(team_id: str) -> Optional[Dict]:
+    """Retrieve full team data including refresh tokens."""
+    db = _load_db()
+    return db.get("teams", {}).get(team_id)
 
 def get_vibelets_user_by_slack_id(slack_user_id: str):
     db = _load_db()

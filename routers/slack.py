@@ -74,6 +74,10 @@ def oauth_callback(code: str, state: str = None):
     team_name = team.get("name")
     bot_user_id = data.get("bot_user_id")
     
+    # Extract Token Rotation Info
+    expires_in = data.get("expires_in")
+    refresh_token = data.get("refresh_token")
+    
     # Extract User ID of the installing user
     authed_user = data.get("authed_user", {})
     slack_user_id = authed_user.get("id")
@@ -82,7 +86,10 @@ def oauth_callback(code: str, state: str = None):
     vibelets_user_id = state.split(":")[0] if state else "unknown"
 
     # Save to "Database"
-    save_slack_connection(vibelets_user_id, team_id, team_name, access_token, bot_user_id, slack_user_id)
+    save_slack_connection(
+        vibelets_user_id, team_id, team_name, access_token, bot_user_id, slack_user_id,
+        refresh_token=refresh_token, expires_in=expires_in
+    )
     
     # Send Welcome Message to the User
     if slack_user_id:
