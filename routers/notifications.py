@@ -5,8 +5,8 @@ from services.vibelets_service import push_notification
 router = APIRouter()
 
 @router.post("/notify")
-def notify(payload: BotNotification):
-    return push_notification(payload)
+async def notify(payload: BotNotification):
+    return await push_notification(payload)
 
 @router.get("/notify")
 def notify_info():

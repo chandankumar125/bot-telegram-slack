@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vibelets | Integrations</title>
     <link rel="stylesheet" href="css/style.css">
-    <script src="js/app.js" defer></script>
+    <script src="js/app.js?v=2" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
-    
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="brand">Vibelets</div>
@@ -40,10 +42,11 @@
 
         <section class="integrations-grid">
             <!-- Slack Card -->
-            <div class="card">
+            <div class="card" id="slack-card">
                 <div class="card-header">
                     <div class="slack-logo">
-                        <img src="https://cdn.icon-icons.com/icons2/2699/PNG/512/slack_logo_icon_169736.png" alt="Slack" width="32" height="32">
+                        <img src="https://cdn.icon-icons.com/icons2/2699/PNG/512/slack_logo_icon_169736.png" alt="Slack"
+                            width="32" height="32">
                     </div>
                     <div class="card-title">
                         <h3>Slack</h3>
@@ -51,10 +54,35 @@
                     </div>
                 </div>
                 <p class="card-desc">
-                    Receive real-time alerts about your ad capabilities, fatigue warnings, and chat with your data directly from Slack.
+                    Receive real-time alerts about your ad capabilities, fatigue warnings, and chat with your data
+                    directly from Slack.
                 </p>
                 <div class="card-actions">
                     <a href="#" id="slack-connect-btn" class="btn-connect">Connect Slack</a>
+                    <div class="status-indicator">
+                        <div class="dot"></div>
+                        <span class="status-text">Not Connected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Telegram Card -->
+            <div class="card" id="telegram-card">
+                <div class="card-header">
+                    <div class="slack-logo" style="background: #24A1DE;"> <!-- Telegram Blue -->
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/2048px-Telegram_logo.svg.png"
+                            alt="Telegram" width="32" height="32">
+                    </div>
+                    <div class="card-title">
+                        <h3>Telegram</h3>
+                        <span>New</span>
+                    </div>
+                </div>
+                <p class="card-desc">
+                    Get instant notifications and chat with your AI assistant directly on Telegram.
+                </p>
+                <div class="card-actions">
+                    <a href="#" id="telegram-connect-btn" class="btn-connect" target="_blank">Connect Telegram</a>
                     <div class="status-indicator">
                         <div class="dot"></div>
                         <span class="status-text">Not Connected</span>
@@ -66,7 +94,7 @@
             <div class="card" style="opacity: 0.5; pointer-events: none;">
                 <div class="card-header">
                     <div class="slack-logo" style="background: #e1f5fe;">
-                         <!-- Meta/Facebook Logo placeholder -->
+                        <!-- Meta/Facebook Logo placeholder -->
                         <span style="font-size: 24px;">♾️</span>
                     </div>
                     <div class="card-title">
@@ -118,4 +146,5 @@
     <div id="toast"></div>
 
 </body>
+
 </html>

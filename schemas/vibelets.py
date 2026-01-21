@@ -3,7 +3,8 @@ from typing import Literal
 
 class BotNotification(BaseModel):
     alert_id: str
-    platform: Literal["slack"]
-    channel_id: str  # For Slack: channel ID, For Telegram: chat ID
+    platform: Literal["slack", "telegram", "all"] = "all"
+    user_id: str = None # Internal User ID (e.g. VL_TEST_USER_001)
+    channel_id: str = None # Optional override (for direct targeting)
     title: str
     summary: str

@@ -71,3 +71,27 @@ except Exception as e:
     print("   3. Copy the 'Bot User OAuth Token'")
     print("   4. Update your .env file")
     print()
+
+# --- Telegram Check ---
+print("\n" + "="*60)
+print("Telegram Checker")
+print("="*60)
+
+from config import TELEGRAM_BOT_TOKEN
+if not TELEGRAM_BOT_TOKEN:
+    print("WARNING: TELEGRAM_BOT_TOKEN is not set.")
+else:
+    try:
+        from telegram import Bot
+        import asyncio
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        me = loop.run_until_complete(bot.get_me())
+        print("SUCCESS: Telegram Bot is properly configured!")
+        print(f"Bot Username: @{me.username}")
+        print(f"Bot ID:       {me.id}")
+        loop.close()
+    except Exception as e:
+        print(f"ERROR: Cannot connect to Telegram: {e}")
+
