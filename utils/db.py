@@ -19,7 +19,7 @@ def _save_db(data: Dict):
 
 import time
 
-def save_slack_connection(user_id: str, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str = None, refresh_token: str = None, expires_in: int = None):
+def save_slack_connection(user_id: str, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str = None, refresh_token: str = None, expires_in: int = None, email: str = None):
     db = _load_db()
     
     # 1. Save User mapping
@@ -32,7 +32,8 @@ def save_slack_connection(user_id: str, team_id: str, team_name: str, access_tok
             "team_id": team_id,
             "team_name": team_name,
             "bot_user_id": bot_user_id,
-            "slack_user_id": slack_user_id
+            "slack_user_id": slack_user_id,
+            "email": email
         }
     }
 
@@ -118,4 +119,98 @@ def disconnect_slack_connection(user_id: str):
         _save_db(db)
         return True
         
+    return False
+
+
+# --- Telegram Methods ---
+
+def save_telegram_connection(vibelets_user_id: str, telegram_chat_id: str, telegram_username: str = None, first_name: str = None, last_name: str = None):
+    db = _load_db()
+    if "users" not in db:
+        db["users"] = {}
+    
+    # Ensure user entry exists
+    if vibelets_user_id not in db["users"]:
+        db["users"][vibelets_user_id] = {}
+
+    db["users"][vibelets_user_id]["telegram"] = {
+        "connected": True,
+        "chat_id": str(telegram_chat_id),
+        "username": telegram_username,
+        "first_name": first_name,
+        "last_name": last_name
+    }
+    
+    _save_db(db)
+
+def get_telegram_connection(vibelets_user_id: str) -> Optional[Dict]:
+    db = _load_db()
+    user_data = db.get("users", {}).get(vibelets_user_id, {})
+    return user_data.get("telegram")
+
+def get_vibelets_user_by_telegram_id(telegram_chat_id: str):
+    db = _load_db()
+    if "users" not in db:
+        return None
+    
+    telegram_chat_id = str(telegram_chat_id)
+    
+    for uid, data in db["users"].items():
+        if "telegram" in data:
+            if str(data["telegram"].get("chat_id")) == telegram_chat_id:
+                return uid
+    return None
+
+def disconnect_telegram_connection(vibelets_user_id: str):
+    db = _load_db()
+    if "users" in db and vibelets_user_id in db["users"] and "telegram" in db["users"][vibelets_user_id]:
+        del db["users"][vibelets_user_id]["telegram"]
+        _save_db(db)
+        return True
+    return False
+
+# --- WhatsApp Methods ---
+
+def save_whatsapp_connection(vibelets_user_id: str, whatsapp_id: str, phone_number: str = None, name: str = None):
+    db = _load_db()
+    if "users" not in db:
+        db["users"] = {}
+    
+    # Ensure user entry exists
+    if vibelets_user_id not in db["users"]:
+        db["users"][vibelets_user_id] = {}
+
+    db["users"][vibelets_user_id]["whatsapp"] = {
+        "connected": True,
+        "whatsapp_id": str(whatsapp_id),
+        "phone_number": phone_number,
+        "name": name
+    }
+    
+    _save_db(db)
+
+def get_whatsapp_connection(vibelets_user_id: str) -> Optional[Dict]:
+    db = _load_db()
+    user_data = db.get("users", {}).get(vibelets_user_id, {})
+    return user_data.get("whatsapp")
+
+def get_vibelets_user_by_whatsapp_id(whatsapp_id: str):
+    db = _load_db()
+    if "users" not in db:
+        return None
+    
+    whatsapp_id = str(whatsapp_id)
+    
+    for uid, data in db["users"].items():
+        if "whatsapp" in data:
+            if str(data["whatsapp"].get("whatsapp_id")) == whatsapp_id:
+                return uid
+    return None
+
+def disconnect_whatsapp_connection(vibelets_user_id: str):
+    db = _load_db()
+    if "users" in db and vibelets_user_id in db["users"] and "whatsapp" in db["users"][vibelets_user_id]:
+        del db["users"][vibelets_user_id]["whatsapp"]
+        _save_db(db)
+        return True
     return False

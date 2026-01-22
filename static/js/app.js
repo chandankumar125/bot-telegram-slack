@@ -2,50 +2,147 @@ window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const platform = urlParams.get('platform');
-
-    // Simulate User ID
     const userId = urlParams.get('uid') || 'VL_TEST_USER_001';
 
-    // Update Connect Link with User ID
-    const connectBtn = document.getElementById('slack-connect-btn');
-    if (connectBtn) {
-        // Point to the backend install endpoint
-        connectBtn.href = `/bot/slack/install?user_id=${userId}`;
+    // 1. Setup Slack Link
+    const slackBtn = document.getElementById('slack-connect-btn');
+    if (slackBtn) {
+        slackBtn.href = `/bot/slack/install?user_id=${userId}`;
     }
 
+    // 2. Setup Telegram & WhatsApp Links
+    fetchTelegramLink(userId);
+    fetchWhatsAppLink(userId);
+
+    // 3. Handle Redirect Status
     if (status === 'success' && platform === 'slack') {
         const team = urlParams.get('team') || 'Workspace';
         showToast(`Slack connected to ${team}! 🎉`);
-        // Remove params from URL to clean up
         window.history.replaceState({}, document.title, window.location.pathname);
-        checkStatus(userId);
-    } else {
-        checkStatus(userId);
     }
+
+    // 4. Check Statuses
+    checkSlackStatus(userId);
+    checkTelegramStatus(userId);
+    checkWhatsAppStatus(userId);
 });
 
-function checkStatus(userId) {
+async function fetchWhatsAppLink(userId) {
+    try {
+        const res = await fetch(`/bot/whatsapp/connect?user_id=${userId}`);
+        const data = await res.json();
+        const btn = document.getElementById('whatsapp-connect-btn');
+        if (btn && data.link) {
+            btn.href = data.link;
+        }
+    } catch (e) {
+        console.error("Failed to get WhatsApp link", e);
+    }
+}
+
+async function fetchTelegramLink(userId) {
+    try {
+        const res = await fetch(`/bot/telegram/connect?user_id=${userId}`);
+        const data = await res.json();
+        const btn = document.getElementById('telegram-connect-btn');
+        if (btn && data.link) {
+            btn.href = data.link;
+        }
+    } catch (e) {
+        console.error("Failed to get Telegram link", e);
+    }
+}
+
+// --- Status Checkers ---
+
+function checkSlackStatus(userId) {
     fetch(`/bot/slack/status?user_id=${userId}`)
         .then(res => res.json())
         .then(data => {
-            if (data.connected) {
-                updateUIConnected(data.team_name, userId);
-            } else {
-                updateUIDisconnected(userId);
-            }
-        })
-        .catch(err => console.error("Failed to check status", err));
+            updateCardUI('slack', data.connected, data.team_name, userId);
+        });
 }
 
-function disconnectUser(userId) {
-    if (!confirm("Are you sure you want to disconnect Slack?")) return;
+function checkTelegramStatus(userId) {
+    fetch(`/bot/telegram/status?user_id=${userId}`)
+        .then(res => res.json())
+        .then(data => {
+            updateCardUI('telegram', data.connected, data.username ? `@${data.username}` : 'Linked', userId);
+        });
+}
 
-    fetch(`/bot/slack/disconnect?user_id=${userId}`, { method: 'POST' })
+function checkWhatsAppStatus(userId) {
+    fetch(`/bot/whatsapp/status?user_id=${userId}`)
+        .then(res => res.json())
+        .then(data => {
+            updateCardUI('whatsapp', data.connected, data.name ? data.name : 'Linked', userId);
+        });
+}
+
+// --- UI Updaters ---
+
+function updateCardUI(platform, isConnected, label, userId) {
+    const cardId = `${platform}-card`;
+    const btnId = `${platform}-connect-btn`;
+
+    const card = document.getElementById(cardId);
+    if (!card) return;
+
+    const statusDot = card.querySelector('.status-indicator .dot');
+    const statusText = card.querySelector('.status-indicator .status-text');
+    const btn = document.getElementById(btnId);
+
+    if (isConnected) {
+        // Connected State
+        statusDot.parentElement.classList.add('connected');
+        statusText.textContent = `Connected: ${label}`;
+
+        btn.textContent = 'Disconnect';
+        btn.classList.add('danger-btn');
+        btn.style.background = '#dc3545';
+        btn.removeAttribute('href');
+        btn.onclick = (e) => {
+            e.preventDefault();
+            disconnectPlatform(platform, userId);
+        };
+        card.style.borderColor = '#2ea043';
+
+    } else {
+        // Disconnected State
+        statusDot.parentElement.classList.remove('connected');
+        statusText.textContent = `Not Connected`;
+
+        btn.textContent = `Connect ${platform.charAt(0).toUpperCase() + platform.slice(1)}`;
+        btn.classList.remove('danger-btn');
+        btn.style.background = ''; // Reset
+
+        // Restore Link
+        if (platform === 'slack') {
+            btn.href = `/bot/slack/install?user_id=${userId}`;
+            btn.onclick = null;
+        } else if (platform === 'telegram') {
+            fetchTelegramLink(userId); // Re-fetch logic
+            btn.onclick = null;
+        } else if (platform === 'whatsapp') {
+            fetchWhatsAppLink(userId);
+            btn.onclick = null;
+        }
+
+        card.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+    }
+}
+
+// --- Actions ---
+
+function disconnectPlatform(platform, userId) {
+    if (!confirm(`Are you sure you want to disconnect ${platform}?`)) return;
+
+    fetch(`/bot/${platform}/disconnect?user_id=${userId}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
             if (data.ok) {
                 showToast("Disconnected successfully.");
-                updateUIDisconnected(userId);
+                updateCardUI(platform, false, null, userId);
             } else {
                 showToast("Failed to disconnect.");
             }
@@ -57,63 +154,7 @@ function showToast(message) {
     const toast = document.getElementById('toast');
     if (toast) {
         toast.textContent = message;
-        toast.className = 'show'; // Add class to animate in
-        setTimeout(() => {
-            toast.className = '';
-        }, 3000);
-    }
-}
-
-function updateUIConnected(teamName = "Active Connection", userId) {
-    const statusDot = document.querySelector('.status-indicator .dot');
-    const statusText = document.querySelector('.status-indicator .status-text');
-    const connectBtn = document.getElementById('slack-connect-btn');
-    const card = document.querySelector('.card');
-
-    if (statusDot) {
-        statusDot.parentElement.classList.add('connected');
-    }
-
-    if (statusText) statusText.textContent = `Connected: ${teamName}`;
-
-    if (connectBtn) {
-        connectBtn.textContent = 'Disconnect';
-        connectBtn.style.background = '#dc3545'; // Red for disconnect
-        connectBtn.classList.add('danger-btn');
-        connectBtn.href = '#';
-        connectBtn.onclick = (e) => {
-            e.preventDefault();
-            disconnectUser(userId);
-        };
-    }
-
-    if (card) {
-        card.style.borderColor = '#2ea043';
-    }
-}
-
-function updateUIDisconnected(userId) {
-    const statusDot = document.querySelector('.status-indicator .dot');
-    const statusText = document.querySelector('.status-indicator .status-text');
-    const connectBtn = document.getElementById('slack-connect-btn');
-    const card = document.querySelector('.card');
-
-    if (statusDot) {
-        statusDot.parentElement.classList.remove('connected');
-    }
-
-    if (statusText) statusText.textContent = `Not Connected`;
-
-    if (connectBtn) {
-        connectBtn.textContent = 'Connect Slack';
-        connectBtn.style.background = ''; // Reset to CSS default (purple)
-        connectBtn.classList.remove('danger-btn');
-        // Point back to install endpoint
-        connectBtn.href = `/bot/slack/install?user_id=${userId}`;
-        connectBtn.onclick = null; // Remove disconnect handler
-    }
-
-    if (card) {
-        card.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+        toast.className = 'show';
+        setTimeout(() => { toast.className = ''; }, 3000);
     }
 }

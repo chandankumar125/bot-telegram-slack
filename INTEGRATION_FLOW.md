@@ -34,6 +34,13 @@ or
 *   We link the **Slack Team ID** & **User ID** to the **Vibelets User Account** in the database.
 *   We redirect the user back to the Vibelets Dashboard with a generic "Success" message.
 
+### Telegram Connection Flow
+1. **Frontend**: Calls `/bot/telegram/connect?user_id=123`.
+2. **Backend**: Generates a deep link `https://t.me/MyBot?start=123`.
+3. **User**: Clicks link, opens Telegram, taps "Start".
+4. **Backend**: Receives `/start 123` via webhook.
+5. **Linking**: Maps `telegram_chat_id` to `vibelets_user_id` in `db.json` and replies with success message.
+
 ---
 
 ## Notification Logic

@@ -26,7 +26,7 @@ def install_bot(user_id: str = "unknown"):
         raise HTTPException(status_code=500, detail="Slack Client ID not configured")
     
     # Scopes needed for the bot
-    scopes = "app_mentions:read,chat:write,commands,im:history,users:read"
+    scopes = "app_mentions:read,chat:write,commands,im:history,users:read,users:read.email"
     
     # Basic state to track user across redirect (Simple implementation)
     state = f"{user_id}:{uuid.uuid4().hex[:8]}"
@@ -85,10 +85,21 @@ def oauth_callback(code: str, state: str = None):
     # Parse state to get user_id
     vibelets_user_id = state.split(":")[0] if state else "unknown"
 
+    # Fetch User Email
+    email = None
+    if slack_user_id:
+        try:
+            client = WebClient(token=access_token)
+            user_info = client.users_info(user=slack_user_id)
+            if user_info.get("ok"):
+                email = user_info["user"]["profile"].get("email")
+        except Exception as e:
+            print(f"Failed to fetch user email: {e}")
+
     # Save to "Database"
     save_slack_connection(
         vibelets_user_id, team_id, team_name, access_token, bot_user_id, slack_user_id,
-        refresh_token=refresh_token, expires_in=expires_in
+        refresh_token=refresh_token, expires_in=expires_in, email=email
     )
     
     # Send Welcome Message to the User
@@ -129,8 +140,7 @@ def disconnect_bot(user_id: str):
                 client = WebClient(token=token)
                 goodbye_msg = (
                     f"⚠️ *You have been disconnected.*\n"
-                    f"You will valid notifications anymore.\n"
-                    f"If this was a mistake, you can reconnect from the dashboard."
+                    f"👉 <{DASHBOARD_URL}|Click here to Connect>"
                 )
                 client.chat_postMessage(channel=slack_user_id, text=goodbye_msg)
         except Exception as e:

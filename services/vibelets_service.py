@@ -13,7 +13,7 @@ def resolve_query(user_id, question):
         if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
             try:
                 genai.configure(api_key=GEMINI_API_KEY)
-                # Use 'gemini-2.0-flash' as requested
+                # Use 'gemini-2.0-flash' as it was recognized
                 model = genai.GenerativeModel('gemini-2.0-flash')
                 response = model.generate_content(
                     f"You are the Vibelets AI Bot. Answer this user query concisely: {question}"
@@ -21,10 +21,14 @@ def resolve_query(user_id, question):
                 return f"✨ *[Gemini AI]*\n{response.text}"
             except Exception as e:
                 # Log the real error to console, but show a nice message to user
+                print(f"------------ GEMINI ERROR ------------")
+                print(e)
+                print(f"--------------------------------------")
                 return (
                     f"🤖 *[System Message]*\n"
                     f"I am currently upgrading my brain. 🧠\n"
-                    f"Please try again later or contact support."
+                    f"Please try again later or contact support.\n"
+                    f"Error: {str(e)}"
                 )
 
         # Fallback to static dummy text (only if NO key is present)
@@ -48,12 +52,48 @@ def resolve_query(user_id, question):
     except Exception as e:
         return f"Unexpected error: {str(e)}"
 
-def push_notification(payload):
+async def push_notification(payload):
     msg = f"*{payload.title}*\n{payload.summary}"
+    results = {}
     
-    if payload.platform == "slack":
-        # Local import to avoid circular dependency with slack_service
-        from services.slack_service import send_message as slack_send_message
-        return slack_send_message(payload.channel_id, msg)
+    # 1. Determine Targets
+    targets = []
     
-    return {"status": "failed", "reason": "Unsupported platform"}
+    # If user_id provided, look up their connections
+    if payload.user_id:
+        from utils.db import get_slack_connection, get_telegram_connection
+        
+        # Check Slack
+        if payload.platform in ["slack", "all"]:
+            slack_conn = get_slack_connection(payload.user_id)
+            if slack_conn and slack_conn.get("connected"):
+                targets.append(("slack", slack_conn.get("slack_user_id")))
+        
+        # Check Telegram
+        if payload.platform in ["telegram", "all"]:
+            tg_conn = get_telegram_connection(payload.user_id)
+            if tg_conn and tg_conn.get("connected"):
+                targets.append(("telegram", tg_conn.get("chat_id")))
+                
+    # If explicit channel_id provided (Legacy/Direct mode)
+    elif payload.channel_id:
+        targets.append((payload.platform, payload.channel_id))
+        
+    # 2. Dispatch
+    from services.slack_service import send_message_to_user as slack_send_message
+    from services.telegram_service import send_message as telegram_send_message
+    import asyncio
+    
+    for platform, target_id in targets:
+        try:
+            if platform == "slack":
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, slack_send_message, target_id, msg)
+                results["slack"] = "sent"
+            elif platform == "telegram":
+                await telegram_send_message(target_id, msg)
+                results["telegram"] = "sent"
+        except Exception as e:
+            results[platform] = f"failed: {str(e)}"
+            
+    return results if results else {"status": "skipped", "reason": "No connected platforms found for user"}
