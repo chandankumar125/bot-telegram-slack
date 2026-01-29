@@ -8,7 +8,7 @@ from services.slack_service import send_notification
 from utils.db import get_slack_connection
 
 def test_alert():
-    user_id = "VL_TEST_USER_001"
+    user_id = "VL_TEST_USER"
     
     print(f"Fetching connection details for {user_id}...")
     connection = get_slack_connection(user_id)

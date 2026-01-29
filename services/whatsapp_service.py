@@ -1,9 +1,8 @@
-from config import WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, DASHBOARD_URL
 from services.vibelets_service import resolve_query
 from utils.db import get_vibelets_user_by_whatsapp_id, save_whatsapp_connection, disconnect_whatsapp_connection
+from helpers.whatsapp_api import send_whatsapp_message
 import logging
-import requests
-import json
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -12,32 +11,9 @@ def send_message(to_number: str, text: str):
     """
     Sends a text message to a WhatsApp user via Graph API.
     """
-    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
-        logger.error("WhatsApp configuration missing")
-        return {"ok": False, "error": "Configuration missing"}
-
-    url = f"https://graph.facebook.com/v17.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "type": "text",
-        "text": {"body": text}
-    }
-    
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        response_data = response.json()
-        
-        if response.status_code == 200:
-            return {"ok": True, "data": response_data}
-        else:
-            logger.error(f"WhatsApp API Error: {response_data}")
-            return {"ok": False, "error": response_data}
+        response_data = send_whatsapp_message(to_number, text)
+        return {"ok": True, "data": response_data}
             
     except Exception as e:
         logger.error(f"Error sending WhatsApp message: {str(e)}")
@@ -93,6 +69,18 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
             parts = text.split()
             if len(parts) > 1:
                 target_user_id = parts[1]
+                import json
+                print("\n" + "="*50)
+                print(f"STAGE 2: Received WhatsApp Connection Command")
+                print("-" * 50)
+                print(json.dumps({
+                    "Command": "connect",
+                    "User ID (Vibelets)": target_user_id,
+                    "WhatsApp Number": from_number,
+                    "Contact Name": contact_name
+                }, indent=2))
+                print("="*50 + "\n")
+
                 save_whatsapp_connection(target_user_id, from_number, from_number, contact_name)
                 
                 msg = (

@@ -35,7 +35,6 @@ class WhatsAppEntry(BaseModel):
     changes: List[WhatsAppChange]
 
 # --- Main Wrapper ---
-
 class WhatsAppWebhookPayload(BaseModel):
     object: str
     entry: List[WhatsAppEntry]

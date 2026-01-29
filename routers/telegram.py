@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
+import json
 from services.telegram_service import handle_update, get_bot_username, send_message
 from utils.db import disconnect_telegram_connection, get_telegram_connection
 from schemas.telegram import TelegramUpdate
@@ -30,6 +31,17 @@ async def connect_link(user_id: str):
     try:
         username = await get_bot_username()
         link = f"https://t.me/{username}?start={user_id}"
+        
+        print("\n" + "="*50)
+        print(f"STAGE 1: Telegram Connect Link Generated")
+        print("-" * 50)
+        print(json.dumps({
+            "User ID (Vibelets)": user_id,
+            "Bot Username": username,
+            "Generated Link": link
+        }, indent=2))
+        print("="*50 + "\n")
+        
         return {"link": link}
     except Exception as e:
         logger.error(f"Failed to generate Telegram link: {e}")

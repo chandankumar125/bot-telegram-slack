@@ -1,17 +1,18 @@
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 from config import SLACK_BOT_TOKEN, DASHBOARD_URL, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET
 from services.vibelets_service import resolve_query
 from utils.db import get_vibelets_user_by_slack_id, get_team_data, update_team_token
 import logging
 import time
-import requests
+from helpers.slack_api import refresh_slack_token
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Default client for main workspace (fallback)
-default_client = WebClient(token=SLACK_BOT_TOKEN)
+from helpers.slack_api import refresh_slack_token, publish_slack_message
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 def ensure_valid_token(team_id: str):
     """
@@ -35,16 +36,7 @@ def ensure_valid_token(team_id: str):
         logger.info(f"Token for team {team_id} expired/expiring. Refreshing...")
         
         try:
-            response = requests.post(
-                "https://slack.com/api/oauth.v2.access",
-                data={
-                    "client_id": SLACK_CLIENT_ID,
-                    "client_secret": SLACK_CLIENT_SECRET,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token
-                }
-            )
-            data = response.json()
+            data = refresh_slack_token(refresh_token)
             
             if data.get("ok"):
                  new_access_token = data.get("access_token")
@@ -65,13 +57,13 @@ def ensure_valid_token(team_id: str):
 
     return access_token
 
-def get_client_for_team(team_id: str):
+def get_token_for_team(team_id: str):
     # Use the smart token retriever
     token = ensure_valid_token(team_id)
     
     if token:
         logger.info(f"Using team-specific token for team {team_id}")
-        return WebClient(token=token)
+        return token
     
     # If no token found in DB, it means the team is NOT connected (or disconnected).
     logger.warning(f"No token found for team {team_id}. Ignoring event.")
@@ -97,9 +89,9 @@ def handle_event(payload):
     user_id = getattr(event, "user", event.channel)
     channel_id = event.channel
     
-    # Get the correct client for this team
-    client = get_client_for_team(team_id)
-    if not client:
+    # Get the correct token for this team
+    token = get_token_for_team(team_id)
+    if not token:
         return {"ok": True}  # Silently ignore if disconnected from Team level (should not happen now with new logic)
 
     # 1. Ignore bot messages / self-events
@@ -129,7 +121,7 @@ def handle_event(payload):
             f"You need to link your Vibelets account to use this bot.\n"
             f"👉 <{DASHBOARD_URL}|Click here to Connect>"
         )
-        send_message(client, channel_id, msg)
+        send_message(token, channel_id, msg)
         return {"ok": True}
 
     # 4. Process the Message
@@ -142,7 +134,7 @@ def handle_event(payload):
             f"Please visit the Vibelets Dashboard to link your Slack account:\n"
             f"https://www.vibelets.ai/dashboard/settings/integrations?slack_id={user_id}"
         )
-        send_message(client, channel_id, msg)
+        send_message(token, channel_id, msg)
         return {"ok": True}
 
     if text.lower().strip() in ["hi", "hello", "help", "start"]:
@@ -152,12 +144,12 @@ def handle_event(payload):
             f"• Ask me questions like _'How is my campaign performing?'_\n"
             f"• Type *connect* to link your account.\n"
          )
-         send_message(client, channel_id, msg)
+         send_message(token, channel_id, msg)
          return {"ok": True}
 
     # 4. Resolve Query via AI
     reply = resolve_query(user_id, text)
-    send_message(client, channel_id, reply)
+    send_message(token, channel_id, reply)
     
     return {"ok": True}
 
@@ -196,23 +188,21 @@ def send_message_to_user(slack_user_id: str, text: str):
          return {"ok": False, "error": "User's team not found"}
 
     # 2. Get Client
-    client = get_client_for_team(team_id)
-    if not client:
+    token = get_token_for_team(team_id)
+    if not token:
         return {"ok": False, "error": "Team token not found"}
 
     # 3. Send
-    return send_message(client, slack_user_id, text)
+    return send_message(token, slack_user_id, text)
 
 
-def send_message(client: WebClient, channel_id: str, text: str):
+def send_message(token: str, channel_id: str, text: str):
     try:
-        client.chat_postMessage(channel=channel_id, text=text)
+        # Using the helper instead of WebClient
+        publish_slack_message(token, channel_id, text)
         return {"ok": True, "status": "sent"}
-    except SlackApiError as e:
-        logger.error(f"Slack API Error: {str(e)}")
-        return {"ok": False, "error": str(e)}
     except Exception as e:
-        logger.error(f"Unexpected Error sending Slack message: {str(e)}")
+        logger.error(f"Error sending Slack message: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def send_notification(team_id: str, channel_id: str, text: str):
@@ -220,7 +210,7 @@ def send_notification(team_id: str, channel_id: str, text: str):
     Sends a proactive notification to a specific team and channel/user.
     Can be called from other modules.
     """
-    client = get_client_for_team(team_id)
-    if client:
-        return send_message(client, channel_id, text)
+    token = get_token_for_team(team_id)
+    if token:
+        return send_message(token, channel_id, text)
     return {"ok": False, "error": "Team not connected"}

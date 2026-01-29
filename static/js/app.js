@@ -2,7 +2,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const platform = urlParams.get('platform');
-    const userId = urlParams.get('uid') || 'VL_TEST_USER_001';
+    const userId = urlParams.get('uid') || 'VL_TEST_USER';
 
     // 1. Setup Slack Link
     const slackBtn = document.getElementById('slack-connect-btn');
@@ -22,9 +22,15 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     // 4. Check Statuses
-    checkSlackStatus(userId);
-    checkTelegramStatus(userId);
-    checkWhatsAppStatus(userId);
+    const checkAllStatuses = () => {
+        checkSlackStatus(userId);
+        checkTelegramStatus(userId);
+        checkWhatsAppStatus(userId);
+    };
+    checkAllStatuses();
+
+    // 5. Auto-Refresh on Tab Focus (Crucial for Telegram/WhatsApp flows)
+    window.addEventListener('focus', checkAllStatuses);
 });
 
 async function fetchWhatsAppLink(userId) {

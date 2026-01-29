@@ -2,11 +2,10 @@ from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from schemas.slack import SlackEventWrapper
 from services.slack_service import handle_event
-from config import SLACK_SIGNING_SECRET, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REDIRECT_URI, DASHBOARD_URL
-from utilis.security import verify_slack_signature
-from utils.db import save_slack_connection, get_slack_connection, disconnect_slack_connection
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
+from config import SLACK_CLIENT_ID, SLACK_REDIRECT_URI, SLACK_SIGNING_SECRET, SLACK_CLIENT_SECRET, DASHBOARD_URL
+
+from helpers.slack_api import verify_slack_request, authorize_slack_user, get_slack_user_info, publish_slack_message
+from utils.db import save_slack_connection, get_slack_connection, disconnect_slack_connection, get_team_token
 import time
 import json
 import requests
@@ -38,6 +37,15 @@ def install_bot(user_id: str = "unknown"):
         f"&redirect_uri={SLACK_REDIRECT_URI}"
         f"&state={state}"
     )
+    print("\n" + "="*50)
+    print(f"STAGE 1: Redirecting User to Slack Auth")
+    print("-" * 50)
+    print(json.dumps({
+        "Client ID": SLACK_CLIENT_ID,
+        "Scopes": scopes.split(","),
+        "State": state
+    }, indent=2))
+    print("="*50 + "\n")
     return RedirectResponse(auth_url)
 
 @router.get("/oauth_callback")
@@ -49,18 +57,20 @@ def oauth_callback(code: str, state: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="Missing code parameter")
 
+    print("\n" + "="*50)
+    print(f"STAGE 2: Received Callback from Slack")
+    print("-" * 50)
+    print(json.dumps({
+        "Code": f"{code[:10]}...",
+        "State": state
+    }, indent=2))
+    print("="*50 + "\n")
+    
     # Exchange code for token
+    from helpers.slack_api import authorize_slack_user
     try:
-        response = requests.post(
-            "https://slack.com/api/oauth.v2.access",
-            data={
-                "client_id": SLACK_CLIENT_ID,
-                "client_secret": SLACK_CLIENT_SECRET,
-                "code": code,
-                "redirect_uri": SLACK_REDIRECT_URI
-            }
-        )
-        data = response.json()
+        # Helper uses env vars if client_id/secret are not passed
+        data = authorize_slack_user(code, SLACK_REDIRECT_URI) 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to communicate with Slack: {str(e)}")
     
@@ -89,8 +99,7 @@ def oauth_callback(code: str, state: str = None):
     email = None
     if slack_user_id:
         try:
-            client = WebClient(token=access_token)
-            user_info = client.users_info(user=slack_user_id)
+            user_info = get_slack_user_info(access_token, slack_user_id)
             if user_info.get("ok"):
                 email = user_info["user"]["profile"].get("email")
         except Exception as e:
@@ -105,15 +114,14 @@ def oauth_callback(code: str, state: str = None):
     # Send Welcome Message to the User
     if slack_user_id:
         try:
-            client = WebClient(token=access_token)
             welcome_msg = (
                 f"👋 *Hello! I'm the Vibelets Bot.*\n"
                 f"✅ **You are now successfully connected!**\n"
                 f"I can help you with insights about your ad campaigns.\n\n"
                 f"• Ask me questions like _'How is my campaign performing?'_\n"
             )
-            client.chat_postMessage(channel=slack_user_id, text=welcome_msg)
-        except SlackApiError as e:
+            publish_slack_message(access_token, slack_user_id, welcome_msg)
+        except Exception as e:
             print(f"Failed to send welcome message: {e}")
     
     return RedirectResponse(
@@ -133,16 +141,14 @@ def disconnect_bot(user_id: str):
             slack_user_id = connection.get("slack_user_id")
             
             # Get token to send message
-            from utils.db import get_team_token
             token = get_team_token(team_id)
             
             if token and slack_user_id:
-                client = WebClient(token=token)
                 goodbye_msg = (
                     f"⚠️ *You have been disconnected.*\n"
                     f"👉 <{DASHBOARD_URL}|Click here to Connect>"
                 )
-                client.chat_postMessage(channel=slack_user_id, text=goodbye_msg)
+                publish_slack_message(token, slack_user_id, goodbye_msg)
         except Exception as e:
             print(f"Failed to send goodbye message: {e}")
 
@@ -159,7 +165,17 @@ def get_connection_status(user_id: str):
     """
     connection = get_slack_connection(user_id)
     if connection and connection.get("connected"):
-        return {"connected": True, "team_name": connection.get("team_name")}
+        # Token is stored at Team level
+        token = get_team_token(connection.get("team_id"))
+        return {
+            "connected": True, 
+            "team_name": connection.get("team_name"),
+            "team_id": connection.get("team_id"),
+            "slack_user_id": connection.get("slack_user_id"),
+            "email": connection.get("email"),
+            "bot_user_id": connection.get("bot_user_id"),
+            "access_token": token
+        }
     return {"connected": False}
 
 # --- Event Handling ---
@@ -197,7 +213,7 @@ async def slack_events(
         if abs(current_time - request_time) > 300:
             raise HTTPException(status_code=401, detail="Request timestamp too old")
         
-        if not verify_slack_signature(SLACK_SIGNING_SECRET, body_str, x_slack_request_timestamp, x_slack_signature):
+        if not verify_slack_request(body_str, x_slack_request_timestamp, x_slack_signature, SLACK_SIGNING_SECRET):
             raise HTTPException(status_code=401, detail="Invalid Slack signature")
     
     

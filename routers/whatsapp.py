@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, H
 from services.whatsapp_service import handle_incoming_message
 from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
 from utils.db import get_whatsapp_connection, disconnect_whatsapp_connection
-from utilis.security import verify_whatsapp_signature
+from helpers.whatsapp_api import verify_whatsapp_signature
 import logging
 
 router = APIRouter()
@@ -38,7 +38,7 @@ async def receive_webhook(
         body_str = body_bytes.decode('utf-8')
         
         if WHATSAPP_APP_SECRET and x_hub_signature:
-            if not verify_whatsapp_signature(WHATSAPP_APP_SECRET, body_str, x_hub_signature):
+            if not verify_whatsapp_signature(body_str, x_hub_signature, WHATSAPP_APP_SECRET):
                 logger.warning("Invalid WhatsApp signature")
                 raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -106,9 +106,13 @@ def get_connect_link(user_id: str):
     import os
     # Default to a placeholder if not set. 
     # USER MUST SET THIS IN .ENV: WHATSAPP_BOT_NUMBER=15550239485
-    bot_number = os.getenv("WHATSAPP_BOT_NUMBER", "15551234567") 
+    bot_number = os.getenv("WHATSAPP_BOT_NUMBER", "15551609511") 
+    
+    # Sanitize number: remove +, -, spaces
+    import re
+    clean_number = re.sub(r'[^0-9]', '', bot_number)
     
     text = f"Connect {user_id}"
-    link = f"https://wa.me/{bot_number}?text={text}"
+    link = f"https://wa.me/{clean_number}?text={text}"
     
     return {"link": link}

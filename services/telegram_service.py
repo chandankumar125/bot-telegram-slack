@@ -1,9 +1,12 @@
 import logging
+import json
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from config import TELEGRAM_BOT_TOKEN
 from services.vibelets_service import resolve_query
 from utils.db import get_vibelets_user_by_telegram_id, save_telegram_connection, get_telegram_connection
+from helpers.telegram_api import send_telegram_message as send_telegram_msg_helper
+
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,18 @@ async def process_telegram_message(message):
         params = text.split(" ")
         if len(params) > 1:
             vibelets_user_id = params[1]
+            
+            print("\n" + "="*50)
+            print(f"STAGE 2: Received Callback/Start from Telegram")
+            print("-" * 50)
+            print(json.dumps({
+                "User ID (Vibelets)": vibelets_user_id,
+                "Telegram User": username,
+                "Chat ID": chat_id,
+                "First Name": first_name
+            }, indent=2))
+            print("="*50 + "\n")
+
             save_telegram_connection(vibelets_user_id, str(chat_id), username, first_name, last_name)
             response_text = (
                 f"👋 *Hello! I'm the Vibelets Bot.*\n"
@@ -96,12 +111,20 @@ async def process_telegram_message(message):
 
 async def send_message(chat_id: str, text: str):
     try:
-        # Try Markdown first (Slack style compatible-ish)
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN)
+        # Offload sync helper to thread
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, 
+            lambda: send_telegram_msg_helper(chat_id, text, parse_mode="Markdown")
+        )
     except Exception as e:
         logger.warning(f"Markdown send failed, trying plain text: {e}")
         try:
-            await bot.send_message(chat_id=chat_id, text=text)
+           loop = asyncio.get_event_loop()
+           await loop.run_in_executor(
+                None, 
+                lambda: send_telegram_msg_helper(chat_id, text, parse_mode=None)
+            )
         except Exception as e2:
              logger.error(f"Failed to send Telegram message: {e2}")
 
