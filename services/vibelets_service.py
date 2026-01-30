@@ -61,7 +61,8 @@ async def push_notification(payload):
     
     # If user_id provided, look up their connections
     if payload.user_id:
-        from utils.db import get_slack_connection, get_telegram_connection
+        from utils.db import get_telegram_connection
+        from utils.postgres_db import get_slack_connection
         
         # Check Slack
         if payload.platform in ["slack", "all"]:

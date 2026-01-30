@@ -22,3 +22,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 VIBELETS_BASE_URL = os.getenv("VIBELETS_BASE_URL", "https://preprod.vibelets.ai/api")
 DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:8000/dashboard/")
 
+
+# Database Configuration
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "postgres")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
+DB_PORT = os.getenv("DB_PORT", "5432")

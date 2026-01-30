@@ -1,6 +1,6 @@
 from config import SLACK_BOT_TOKEN, DASHBOARD_URL, SLACK_CLIENT_ID, SLACK_CLIENT_SECRET
 from services.vibelets_service import resolve_query
-from utils.db import get_vibelets_user_by_slack_id, get_team_data, update_team_token
+from utils.postgres_db import get_vibelets_user_by_slack_id, get_team_data, update_team_token, get_connection_by_slack_user_id
 import logging
 import time
 from helpers.slack_api import refresh_slack_token
@@ -148,7 +148,7 @@ def handle_event(payload):
          return {"ok": True}
 
     # 4. Resolve Query via AI
-    reply = resolve_query(user_id, text)
+    reply = resolve_query(vibelets_user_id, text)
     send_message(token, channel_id, reply)
     
     return {"ok": True}
@@ -162,32 +162,15 @@ def send_message_to_user(slack_user_id: str, text: str):
     Sends a message to a Slack user, automatically finding their team and token.
     This is designed for cross-service calls (like notifications).
     """
-    # 1. Find the User in our DB to get their Team ID
-    vibelets_user_id = get_vibelets_user_by_slack_id(slack_user_id)
-    if not vibelets_user_id:
-        # Fallback: maybe they aren't fully linked but we have a team token?
-        # Actually, without knowing the Team ID, we can't get the Token.
-        # But wait! We passed the slack_user_id.
-        # We need to find which TEAM this user belongs to.
-        # This requires scanning the DB or checking if we stored team_id with the user.
-        # Let's peek at db.py logic... 
-        pass 
-
-    from utils.db import _load_db
-    db = _load_db()
-    team_id = None
+    # 1. Use optimized query to get team and token directly from slack_user_id
+    connection = get_connection_by_slack_user_id(slack_user_id)
     
-    # Brute force find team_id for this slack_user (since our get_vibelets_user only gives internal ID)
-    # We need the Team ID to get the Access Token.
-    for uid, data in db.get("users", {}).items():
-        if "slack" in data and data["slack"].get("slack_user_id") == slack_user_id:
-             team_id = data["slack"].get("team_id")
-             break
+    if not connection:
+        return {"ok": False, "error": "User/Team not found"}
+        
+    team_id = connection.get("team_id")
     
-    if not team_id:
-         return {"ok": False, "error": "User's team not found"}
-
-    # 2. Get Client
+    # 2. Get Client (using wrapper handles refresh if needed)
     token = get_token_for_team(team_id)
     if not token:
         return {"ok": False, "error": "Team token not found"}

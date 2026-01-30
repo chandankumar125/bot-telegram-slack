@@ -5,7 +5,7 @@ from services.slack_service import handle_event
 from config import SLACK_CLIENT_ID, SLACK_REDIRECT_URI, SLACK_SIGNING_SECRET, SLACK_CLIENT_SECRET, DASHBOARD_URL
 
 from helpers.slack_api import verify_slack_request, authorize_slack_user, get_slack_user_info, publish_slack_message
-from utils.db import save_slack_connection, get_slack_connection, disconnect_slack_connection, get_team_token
+from utils.postgres_db import save_slack_connection, get_slack_connection, disconnect_slack_connection, get_team_token
 import time
 import json
 import requests
@@ -93,7 +93,13 @@ def oauth_callback(code: str, state: str = None):
     slack_user_id = authed_user.get("id")
     
     # Parse state to get user_id
-    vibelets_user_id = state.split(":")[0] if state else "unknown"
+    vibelets_user_id_str = state.split(":")[0] if state else "unknown"
+    
+    try:
+        vibelets_user_id = int(vibelets_user_id_str)
+    except ValueError:
+        print(f"Invalid user_id provided in state: {vibelets_user_id_str}")
+        raise HTTPException(status_code=400, detail="Invalid User ID in OAuth state. Please start from the Dashboard.")
 
     # Fetch User Email
     email = None
