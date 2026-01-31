@@ -29,9 +29,17 @@ def ensure_valid_token(team_id: str):
     
     # If no expiry info, it's a legacy non-expiring token
     if not expires_at or not refresh_token:
+        logger.info(f"Team {team_id}: No expiry found. Using existing token.")
         return access_token
     
     # Check if expired (with 5 minute buffer)
+    # Ensure expires_at is a timestamp (float/int)
+    if hasattr(expires_at, 'timestamp'): 
+        expires_at = expires_at.timestamp()
+        
+    time_left = expires_at - time.time()
+    logger.info(f"Team {team_id}: Token expires in {time_left:.0f} seconds.")
+
     if time.time() > (expires_at - 300):
         logger.info(f"Token for team {team_id} expired/expiring. Refreshing...")
         
@@ -166,6 +174,7 @@ def send_message_to_user(slack_user_id: str, text: str):
     connection = get_connection_by_slack_user_id(slack_user_id)
     
     if not connection:
+        logger.error(f"Notify Error: No connection found for slack_user_id={slack_user_id}")
         return {"ok": False, "error": "User/Team not found"}
         
     team_id = connection.get("team_id")
@@ -173,6 +182,7 @@ def send_message_to_user(slack_user_id: str, text: str):
     # 2. Get Client (using wrapper handles refresh if needed)
     token = get_token_for_team(team_id)
     if not token:
+        logger.error(f"Notify Error: No token found for team_id={team_id}")
         return {"ok": False, "error": "Team token not found"}
 
     # 3. Send

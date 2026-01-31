@@ -165,16 +165,26 @@ def get_slack_connection(user_id: str):
                 sw.bot_user_id
             FROM public.slack_user_connections suc
             JOIN public.slack_workspaces sw ON sw.id = suc.workspace_id
-            WHERE suc.user_id = %s
-        """, (user_id,))
+            WHERE suc.user_id = %s AND suc.is_connected = TRUE
+            ORDER BY suc.id DESC
+            LIMIT 1
+        """, (int(user_id),))
         
         row = cursor.fetchone()
         if row:
             return dict(row)
         return None
+    except ValueError:
+        logger.error(f"get_slack_connection: user_id '{user_id}' is not an integer.")
+        return None
+    except Exception as e:
+        logger.error(f"Error in get_slack_connection: {e}")
+        return None
     finally:
-        cursor.close()
-        conn.close()
+        if 'cursor' in locals():
+             cursor.close()
+        if 'conn' in locals():
+             conn.close()
 
 def disconnect_slack_connection(user_id: str):
     conn = get_db_connection()

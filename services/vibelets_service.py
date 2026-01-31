@@ -1,6 +1,8 @@
 import requests
 import google.generativeai as genai
 from config import VIBELETS_BASE_URL, VIBELETS_API_KEY, GEMINI_API_KEY
+from utils.postgres_db import get_slack_connection
+from utils.db import get_telegram_connection
 
 def resolve_query(user_id, question):
     # DUMMY/TEST MODE:
@@ -61,12 +63,11 @@ async def push_notification(payload):
     
     # If user_id provided, look up their connections
     if payload.user_id:
-        from utils.db import get_telegram_connection
-        from utils.postgres_db import get_slack_connection
         
         # Check Slack
         if payload.platform in ["slack", "all"]:
             slack_conn = get_slack_connection(payload.user_id)
+            print(f"DEBUG: Checking Slack connection for {payload.user_id}: {slack_conn}")
             if slack_conn and slack_conn.get("connected"):
                 targets.append(("slack", slack_conn.get("slack_user_id")))
         
@@ -89,8 +90,12 @@ async def push_notification(payload):
         try:
             if platform == "slack":
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, slack_send_message, target_id, msg)
-                results["slack"] = "sent"
+                # Run sync wrapper in thread
+                res = await loop.run_in_executor(None, slack_send_message, target_id, msg)
+                if isinstance(res, dict) and not res.get("ok"):
+                    results["slack"] = f"failed: {res.get('error')}"
+                else:
+                    results["slack"] = "sent"
             elif platform == "telegram":
                 await telegram_send_message(target_id, msg)
                 results["telegram"] = "sent"

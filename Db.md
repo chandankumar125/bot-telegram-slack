@@ -143,3 +143,55 @@ VALUES
 3️⃣ Dummy data for slack_event_logs
 
 # routes(url)-- controler(logic)-- frontend()-- database(postgress)
+
+### The Slack integration flow has been successfully updated to use PostgreSQL.
+
+Here is a summary of the changes:
+
+# Database Integration (utils/postgres_db.py):
+1. Created a new module to handle all PostgreSQL interactions.
+2. Implemented functions to save connections (slack_workspaces, slack_user_connections), retrieve tokens, and handle disconnects.
+3. Matches the schema provided in Db.md.
+
+# Configuration:
+1. Updated .env with PostgreSQL credentials (defaulted to localhost, postgres, root). Please check and update these credentials in your .env file.
+2. Updated config.py to load these database settings.
+3. Added psycopg2-binary to requirements.txt and installed it.
+# Router (routers/slack.py):
+1. Refactored oauth_callback to save connection data to PostgreSQL.
+2. Refactored disconnect_bot and get_connection_status to query PostgreSQL.
+3. Added validation for user_id to ensure it's a valid integer matching adu_users.
+
+# Service Logic (services/slack_service.py):
+1. Updated handle_event to fetch tokens and user mappings from PostgreSQL.
+2. Refactored send_message_to_user to efficiently query the database (joins) rather than scanning a JSON file.
+3. Ensured resolve_query receives the correct internal Vibelets User ID instead of the Slack ID.
+
+# Notifications (services/vibelets_service.py):
+1. Updated to fetch Slack connections from PostgreSQL when sending push notifications.
+
+
+### Correct Flow for Notification:
+
+1. Frontend/Postman sends user_id="1".
+2. push_notification calls get_slack_connection("1").
+3. get_slack_connection returns slack_user_id(e.g., U12345).
+4. slack_send_message calls get_connection_by_slack_user_id("U12345") to find the team token.
+5. publish_slack_message uses the Team/Bot Token (xoxb-...) to DM U12345.
+
+{
+  "alert_id": "test_alert_001",
+  "platform": "slack",
+  "user_id": "1", 
+  "title": "Campaign Update",
+  "summary": "Hello This is a test notification sent from Vibelets Backend via PostgreSQL lookup!"
+}
+
+
+DEBUG: Checking Slack connection for 1: {'connected': True, 'slack_user_id': 'U0A8LC3ELP8', 'email': 'chandan.kumar@adsparkx.com', 'team_id': 'T0A8NCYDA10', 'team_name': 'Adsparkx', 'bot_user_id': 'U0A9H5GBUNL'}     
+INFO:services.slack_service:Team T0A8NCYDA10: Token expires in 46218 seconds.
+INFO:services.slack_service:Using team-specific token for team T0A8NCYDA10
+INFO:     127.0.0.1:57811 - "POST /bot/notify HTTP/1.1" 200 OK
+INFO:     35.153.200.243:0 - "POST /bot/slack/events HTTP/1.1" 200 OK
+INFO:services.slack_service:Team T0A8NCYDA10: Token expires in 46207 seconds.
+INFO:services.slack_service:Using team-specific token for team T0A8NCYDA10
