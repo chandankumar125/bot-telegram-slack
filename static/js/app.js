@@ -2,7 +2,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
     const platform = urlParams.get('platform');
-    const userId = urlParams.get('uid') || 'VL_TEST_USER';
+    const userId = urlParams.get('uid') || '1';
 
     // 1. Setup Slack Link
     const slackBtn = document.getElementById('slack-connect-btn');

@@ -156,7 +156,12 @@ def handle_event(payload):
          return {"ok": True}
 
     # 4. Resolve Query via AI
-    reply = resolve_query(vibelets_user_id, text)
+    # Pass thread_ts if available to maintain conversation context (or alert context)
+    context = {}
+    if "thread_ts" in event:
+        context["thread_ts"] = event.thread_ts
+        
+    reply = resolve_query(vibelets_user_id, text, context=context)
     send_message(token, channel_id, reply)
     
     return {"ok": True}

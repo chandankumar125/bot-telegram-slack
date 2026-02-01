@@ -1,10 +1,12 @@
 import requests
 import google.generativeai as genai
 from config import VIBELETS_BASE_URL, VIBELETS_API_KEY, GEMINI_API_KEY
+
 from utils.postgres_db import get_slack_connection
 from utils.db import get_telegram_connection
 
-def resolve_query(user_id, question):
+# resolve_query: used by slack_service.py, telegram_service.py, whatsapp_service.py
+def resolve_query(user_id, question, context: dict = None):
     # DUMMY/TEST MODE:
     # If the user asks for a test or the API key is not set up, act as an AI Agent.
     is_dummy_request = any(k in question.lower() for k in ["dummy", "test", "check", "ping"])
@@ -17,9 +19,13 @@ def resolve_query(user_id, question):
                 genai.configure(api_key=GEMINI_API_KEY)
                 # Use 'gemini-2.0-flash' as it was recognized
                 model = genai.GenerativeModel('gemini-2.0-flash')
-                response = model.generate_content(
-                    f"You are the Vibelets AI Bot. Answer this user query concisely: {question}"
-                )
+                
+                # Enrich prompt with context if available
+                prompt = f"You are the Vibelets AI Bot. Answer this user query concisely: {question}"
+                if context and context.get("alert_id"):
+                     prompt += f"\n\nContext: The user is replying to Alert ID: {context.get('alert_id')}"
+                
+                response = model.generate_content(prompt)
                 return f"✨ *[Gemini AI]*\n{response.text}"
             except Exception as e:
                 # Log the real error to console, but show a nice message to user
@@ -41,10 +47,14 @@ def resolve_query(user_id, question):
         )
     
     try:
+        payload = {"user_id": user_id, "question": question}
+        if context:
+            payload["context"] = context
+
         response = requests.post(
             f"{VIBELETS_BASE_URL}/bot/resolve",
             headers={"Authorization": f"Bearer {VIBELETS_API_KEY}"},
-            json={"user_id": user_id, "question": question},
+            json=payload,
             timeout=10
         )
         response.raise_for_status()
@@ -54,6 +64,7 @@ def resolve_query(user_id, question):
     except Exception as e:
         return f"Unexpected error: {str(e)}"
 
+# push_notification: used by routers/notifications.py
 async def push_notification(payload):
     msg = f"*{payload.title}*\n{payload.summary}"
     results = {}

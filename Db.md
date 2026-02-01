@@ -195,3 +195,59 @@ INFO:     127.0.0.1:57811 - "POST /bot/notify HTTP/1.1" 200 OK
 INFO:     35.153.200.243:0 - "POST /bot/slack/events HTTP/1.1" 200 OK
 INFO:services.slack_service:Team T0A8NCYDA10: Token expires in 46207 seconds.
 INFO:services.slack_service:Using team-specific token for team T0A8NCYDA10
+
+
+### Slack logic: "Context-Aware" logic linking Inbound (Flow A) and Outbound (Flow B) communication.
+
+# Flow A: Outbound Notification (services/vibelets_service.py push_notification)
+Trigger: An alert is generated in the Vibelets Dashboard.
+Action: The backend queries the database to find the connected Slack user.
+Context Injection: It retrieves the alert_id and passes it to the resolve_query function.
+AI Processing: resolve_query sends this ID to the Vibelets AI Service.
+Response: The AI Service generates a concise summary and sends it back to the Slack user via the Slack API.
+# Flow B: Inbound Reply (Event) slack_service.py (handle_event) : resolve_query logic
+Trigger: The Slack user replies to the bot's message in Slack.
+Action: Slack sends an event to the backend.
+Context Extraction: The backend parses the event and extracts the thread_ts (timestamp of the original message).
+AI Processing: resolve_query is called with the user's reply and the thread_ts.
+Response: The AI Service uses the thread_ts to understand the conversation history and generates a relevant follow-up response, which is then sent back to Slack.
+
+### if the chat is out of context then????
+If the chat is "out of context" (e.g., the user sends a message like "Hello bot" that is not a reply to an alert, or a reply to a very old alert the AI doesn't remember):
+
+* The System Detects No Thread: in slack_service.py, if "thread_ts" in event: will be false (or the thread will be empty).
+* Context is Empty: resolve_query receives context={}.
+* Default AI Behavior: The request is sent to the Vibelets AI as a standalone question: {"question": "Hello bot", "context": {}}.
+* Line 50-60: It prepares the payload. If context is empty or None, it sends {"user_id": ..., "question": ...}.
+* Line 55: It POSTs this standard payload to your Main Vibelets AI Endpoint.
+
+* AI Response: The Vibelets AI treats it as a fresh query. It answers based on general knowledge or real-time dashboard data (e.g., "Hi! I can help you with your campaigns..."), rather than trying to resolve "Fix this".
+
+If is_dummy_request is True (Gemini Mode), the default behavior is in Lines 25-29 (where it just prompts Gemini with the question, adding context only if context exists).
+
+
+### push_notification
+Explanation:
+This function acts as a "Broadcast Router". Its job is to take a generic message (Title + Summary) and figure out where to send it for a specific user.
+
+Step-by-Step Logic:
+
+# Input (Payload): It receives a BotNotification object containing:
+* user_id(primary key of adu_users): The Vibelets User ID (e.g., "1").  Postgresql_db.py
+* platform: Where to send it ("slack", "telegram", or "all").
+* title and summary: The message content.
+
+# Discovery (Lines 76-91):
+* It checks the platform filter.
+* Slack: Calls get_slack_connection(user_id) from the database.
+* If the user has linked their Slack account (connected: True), it adds their Slack ID (e.g., U12345) to the targets list.
+* Telegram: Calls get_telegram_connection(user_id).
+* If linked, adds their Chat ID to the targets list.
+
+# Dispatch (Lines 101-118):
+* It loops through the targets list.
+* If Slack: It calls slack_send_message (which uses the stored Bot Token to DM the user).
+* If Telegram: It calls telegram_send_message.
+* It collects the results (e.g., {"slack": "sent", "telegram": "failed"}) and returns them.
+
+Key Benefit: The backend dashboard doesn't need to know what app the user prefers. It just says "Notify User 1", and this service handles the delivery logic.

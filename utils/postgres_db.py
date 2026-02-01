@@ -224,3 +224,4 @@ def get_connection_by_slack_user_id(slack_user_id: str):
     finally:
         cursor.close()
         conn.close()
+
