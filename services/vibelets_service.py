@@ -2,8 +2,7 @@ import requests
 import google.generativeai as genai
 from config import VIBELETS_BASE_URL, VIBELETS_API_KEY, GEMINI_API_KEY
 
-from utils.postgres_db import get_slack_connection
-from utils.db import get_telegram_connection
+from utils.postgres_db import get_slack_connection, get_telegram_connection, get_whatsapp_connection
 
 # resolve_query: used by slack_service.py, telegram_service.py, whatsapp_service.py
 def resolve_query(user_id, question, context: dict = None):
@@ -88,6 +87,13 @@ async def push_notification(payload):
             if tg_conn and tg_conn.get("connected"):
                 targets.append(("telegram", tg_conn.get("chat_id")))
                 
+        # Check WhatsApp
+        if payload.platform in ["whatsapp", "all"]:
+            wa_conn = get_whatsapp_connection(payload.user_id)
+            if wa_conn and wa_conn.get("connected"):
+                # Use standard format for services: "whatsapp", phone_number
+                targets.append(("whatsapp", wa_conn.get("phone_number")))
+                
     # If explicit channel_id provided (Legacy/Direct mode)
     elif payload.channel_id:
         targets.append((payload.platform, payload.channel_id))
@@ -110,6 +116,10 @@ async def push_notification(payload):
             elif platform == "telegram":
                 await telegram_send_message(target_id, msg)
                 results["telegram"] = "sent"
+            elif platform == "whatsapp":
+                from services.whatsapp_service import send_message as wa_send_message
+                wa_send_message(target_id, msg)
+                results["whatsapp"] = "sent"
         except Exception as e:
             results[platform] = f"failed: {str(e)}"
             

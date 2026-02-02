@@ -1,6 +1,6 @@
 from services.vibelets_service import resolve_query
-from utils.db import get_vibelets_user_by_whatsapp_id, save_whatsapp_connection, disconnect_whatsapp_connection
-from helpers.whatsapp_api import send_whatsapp_message
+from utils.postgres_db import get_whatsapp_user_by_phone, save_whatsapp_connection, disconnect_whatsapp_connection
+from helpers.whatsapp_api import send_whatsapp_message, format_for_whatsapp
 import logging
 
 
@@ -12,7 +12,9 @@ def send_message(to_number: str, text: str):
     Sends a text message to a WhatsApp user via Graph API.
     """
     try:
-        response_data = send_whatsapp_message(to_number, text)
+        # Fetch logic: format text for WhatsApp (e.g. bolding)
+        formatted_text = format_for_whatsapp(text)
+        response_data = send_whatsapp_message(to_number, formatted_text)
         return {"ok": True, "data": response_data}
             
     except Exception as e:
@@ -62,7 +64,7 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
         # --- Logic Handling ---
         
         # 1. Check Connection
-        vibelets_user_id = get_vibelets_user_by_whatsapp_id(from_number)
+        vibelets_user_id = get_whatsapp_user_by_phone(from_number)
         
         # 2. Handle Connect Command
         if text.lower().startswith("connect"):

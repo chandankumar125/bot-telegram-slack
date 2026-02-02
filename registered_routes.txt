@@ -1,0 +1,21 @@
+REGISTERED ROUTES:
+==================================================
+{'GET'} /bot/slack/install
+{'GET'} /bot/slack/oauth_callback
+{'POST'} /bot/slack/disconnect
+{'GET'} /bot/slack/status
+{'POST'} /bot/slack/events
+{'GET'} /bot/slack/events
+{'POST'} /bot/telegram/webhook
+{'GET'} /bot/telegram/connect
+{'POST'} /bot/telegram/disconnect
+{'GET'} /bot/telegram/status
+{'GET'} /bot/whatsapp/webhook
+{'POST'} /bot/whatsapp/webhook
+{'GET'} /bot/whatsapp/status
+{'POST'} /bot/whatsapp/disconnect
+{'GET'} /bot/whatsapp/connect
+{'POST'} /bot/notify
+{'GET'} /bot/notify
+{'GET'} /health
+==================================================

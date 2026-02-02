@@ -11,6 +11,7 @@ import hmac
 import hashlib
 import requests
 import json
+import re
 from typing import Dict, Any, Optional
 
 # Get configuration from environment
@@ -111,3 +112,27 @@ def verify_whatsapp_signature(
     ).hexdigest()
     
     return hmac.compare_digest(expected_hash, signature)
+
+
+def format_for_whatsapp(text: str) -> str:
+    """
+    Converts standard Markdown to WhatsApp formatting.
+    Fetch logic from python-whatsapp-bot/app/utils/whatsapp_utils.py.
+    """
+    if not text:
+        return ""
+        
+    # Remove brackets like 【...】
+    pattern = r"\【.*?\】"
+    text = re.sub(pattern, "", text).strip()
+
+    # Convert **bold** to *bold*
+    # Pattern to find double asterisks including the word(s) in between
+    pattern = r"\*\*(.*?)\*\*"
+    replacement = r"*\1*"
+    text = re.sub(pattern, replacement, text)
+    
+    # You might add more conversions here if needed (e.g., _italic_)
+    
+    return text
+

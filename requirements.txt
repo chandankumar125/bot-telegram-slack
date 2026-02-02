@@ -8,3 +8,4 @@ aiofiles
 google-generativeai # type: ignore  
 python-telegram-bot
 psycopg2-binary
+PyJWT

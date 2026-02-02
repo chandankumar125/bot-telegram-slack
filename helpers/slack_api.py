@@ -1,7 +1,7 @@
 """
-Slack API Integration Module
+Slack API Integration Module  is for OUTPUT (API Client).
 
-This module handles all Slack API interactions including:
+This module handles/calls all Slack API interactions including:
 - User authorization (OAuth): authorize_slack_user
 - Token refreshing: refresh_slack_token
 - Webhook signature verification: verify_slack_request
@@ -149,7 +149,7 @@ def refresh_slack_token(
     except requests.RequestException as e:
         raise Exception(f"Error during Slack token refresh: {str(e)}")
 
-
+# Utility to check security signatures locally (INTERNAL UTILITY).
 def verify_slack_request(
     body: str, 
     timestamp: str, 

@@ -4,7 +4,7 @@ from telegram import Bot, Update
 from telegram.constants import ParseMode
 from config import TELEGRAM_BOT_TOKEN
 from services.vibelets_service import resolve_query
-from utils.db import get_vibelets_user_by_telegram_id, save_telegram_connection, get_telegram_connection
+from utils.postgres_db import get_telegram_user_by_chat_id, save_telegram_connection, get_telegram_connection
 from helpers.telegram_api import send_telegram_message as send_telegram_msg_helper
 
 import asyncio
@@ -77,7 +77,7 @@ async def process_telegram_message(message):
             return
         
         # If no param, check if already connected
-        existing_user = get_vibelets_user_by_telegram_id(str(chat_id))
+        existing_user = get_telegram_user_by_chat_id(str(chat_id))
         if existing_user:
             await send_message(chat_id, "👋 Welcome back! You are already connected. How can I help you?")
         else:
@@ -94,7 +94,7 @@ async def process_telegram_message(message):
         return
 
     # 2. Check Connection:  identifying the user for authentication
-    vibelets_user_id = get_vibelets_user_by_telegram_id(str(chat_id))
+    vibelets_user_id = get_telegram_user_by_chat_id(str(chat_id))
     if not vibelets_user_id:
         await send_message(chat_id, "⚠️ Please connect your account first using the /start command with your connection token.")
         return

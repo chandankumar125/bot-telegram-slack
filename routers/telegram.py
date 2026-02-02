@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Depends
 import json
 from services.telegram_service import handle_update, get_bot_username, send_message
-from utils.db import disconnect_telegram_connection, get_telegram_connection
+from utils.postgres_db import disconnect_telegram_connection, get_telegram_connection
 from schemas.telegram import TelegramUpdate
+from utils.auth import get_current_user
 import logging
 
 router = APIRouter()
@@ -21,7 +22,7 @@ async def telegram_webhook(update: TelegramUpdate, background_tasks: BackgroundT
     return {"ok": True}
 
 @router.get("/connect")
-async def connect_link(user_id: str):
+async def connect_link(user_id: str = Depends(get_current_user)):
     """
     Generates a deep link for the user to start the bot and connect their account.
     """
@@ -48,7 +49,7 @@ async def connect_link(user_id: str):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.post("/disconnect")
-async def disconnect_bot(user_id: str):
+async def disconnect_bot(user_id: str = Depends(get_current_user)):
     """
     Disconnects the user from Telegram.
     """
@@ -69,7 +70,7 @@ async def disconnect_bot(user_id: str):
     return {"ok": success}
 
 @router.get("/status")
-def get_status(user_id: str):
+def get_status(user_id: str = Depends(get_current_user)):
     conn = get_telegram_connection(user_id)
     if conn and conn.get("connected"):
         return {"connected": True, "username": conn.get("username")}

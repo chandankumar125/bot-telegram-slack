@@ -5,7 +5,7 @@ This document defines the PostgreSQL database schema for Slack integration with 
 ---
 
 ## Existing Table (No Changes)
-
+# You need adu_users id to know whose data to show.
 ```sql
 -- Your existing table (unchanged)
 adu_users (

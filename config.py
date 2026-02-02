@@ -29,3 +29,8 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
 DB_PORT = os.getenv("DB_PORT", "5432")
+
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "JWT_SECRET")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "JWT_ALGORITHM")
+

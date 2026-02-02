@@ -19,16 +19,18 @@ def get_db_connection():
     except Exception as e:
         logger.error(f"Error connecting to database: {e}")
         raise e
-
+# Vibelets/ADU User ID as as input parameter: Slack User → ADU User ID.
 def save_slack_connection(user_id: int, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str, refresh_token: str = None, expires_in: int = None, email: str = None):
     """
-    Saves the Slack workspace and user connection to PostgreSQL.
+    Saves the Slack workspace and Slack user connection to PostgreSQL.
+    Saves the Company info (Team ID, Name, Token) into slack_workspaces.
+    Saves the User link (Slack ID ↔ Vibelets ID) into slack_user_connections.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # 1. Upsert Slack Workspace
+        # 1. Upsert(Update or Insert) Slack Workspace
         expires_at = None
         if expires_in:
              import datetime
@@ -53,7 +55,7 @@ def save_slack_connection(user_id: int, team_id: str, team_name: str, access_tok
         
         workspace_id = cursor.fetchone()[0]
         
-        # 2. Upsert Slack User Connection
+        # 2. Upsert(Update or Insert) Slack User Connection
         # user_id must be INT. If not (e.g. 'unknown'), try to handle or fail.
         # We'll allow it to fail if invalid type, as per schema.
         
@@ -84,6 +86,10 @@ def save_slack_connection(user_id: int, team_id: str, team_name: str, access_tok
         conn.close()
 
 def get_team_token(team_id: str):
+    """
+    Retrieves the Slack Workspace configuration (Token, Expiry) for a given Team ID.
+    Internal token management. Action: Fetches the raw token for API calls.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -99,6 +105,7 @@ def get_team_token(team_id: str):
         conn.close()
 
 def get_team_data(team_id: str):
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
@@ -119,6 +126,10 @@ def get_team_data(team_id: str):
         conn.close()
 
 def update_team_token(team_id: str, access_token: str, refresh_token: str, expires_in: int):
+    """
+    Internal token management
+    Updates the token if it was refreshed.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -136,6 +147,11 @@ def update_team_token(team_id: str, access_token: str, refresh_token: str, expir
         conn.close()
 
 def get_vibelets_user_by_slack_id(slack_user_id: str):
+    """
+    Reverse lookup. Finds the ADU User ID associated with a given Slack User ID.
+    Used when a message arrives from Slack.
+    Returns the Vibelets user_id so the bot knows whose data to fetch.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -152,6 +168,9 @@ def get_vibelets_user_by_slack_id(slack_user_id: str):
         conn.close()
 
 def get_slack_connection(user_id: str):
+    """
+    Checks "Is this Vibelets User (ID: 5) connected to Slack?"
+    """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
@@ -187,6 +206,10 @@ def get_slack_connection(user_id: str):
              conn.close()
 
 def disconnect_slack_connection(user_id: str):
+    """
+    Goal: Unlinks the user. Action: Sets is_connected = FALSE in the database. 
+    It does not delete the row (allows for history/audit), just deactivates it.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -205,6 +228,8 @@ def disconnect_slack_connection(user_id: str):
 def get_connection_by_slack_user_id(slack_user_id: str):
     """
     Finds the team_id and token for a given slack_user_id.
+    Used for notifications.
+    Finds the user, checks which Workspace they belong to, and returns that Workspace's access_token
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -225,3 +250,202 @@ def get_connection_by_slack_user_id(slack_user_id: str):
         cursor.close()
         conn.close()
 
+# -------------------------------------------------------------------------
+# TELEGRAM DATABASE FUNCTIONS
+# -------------------------------------------------------------------------
+
+def save_telegram_connection(user_id: int, chat_id: str, username: str, first_name: str, last_name: str):
+    """
+    Saves or updates the connection between a Vibelets User and a Telegram User.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO public.telegram_user_connections 
+            (user_id, chat_id, username, first_name, last_name, is_connected, connected_at, disconnected_at)
+            VALUES (%s, %s, %s, %s, %s, TRUE, NOW(), NULL)
+            ON CONFLICT (user_id) 
+            DO UPDATE SET 
+                chat_id = EXCLUDED.chat_id,
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                is_connected = TRUE,
+                connected_at = NOW(),
+                disconnected_at = NULL;
+        """, (user_id, chat_id, username, first_name, last_name))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error saving telegram connection: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_telegram_connection(user_id: str):
+    """
+    Checks if a Vibelets user is connected to Telegram.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("""
+            SELECT 
+                is_connected as connected,
+                chat_id,
+                username,
+                first_name
+            FROM public.telegram_user_connections
+            WHERE user_id = %s AND is_connected = TRUE
+        """, (int(user_id),))
+        
+        return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
+    except ValueError:
+         return None
+    except Exception as e:
+        logger.error(f"Error getting telegram connection: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def disconnect_telegram_connection(user_id: str):
+    """
+    Disconnects a user from Telegram.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE public.telegram_user_connections
+            SET is_connected = FALSE, disconnected_at = NOW()
+            WHERE user_id = %s
+        """, (int(user_id),))
+        conn.commit()
+        return cursor.rowcount > 0
+    except ValueError:
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_telegram_user_by_chat_id(chat_id: str):
+    """
+    Reverse lookup: Telegram Chat ID -> Vibelets User ID
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT user_id FROM public.telegram_user_connections
+            WHERE chat_id = %s AND is_connected = TRUE
+        """, (chat_id,))
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# -------------------------------------------------------------------------
+# WHATSAPP DATABASE FUNCTIONS
+# -------------------------------------------------------------------------
+
+def save_whatsapp_connection(user_id: int, whatsapp_id: str, phone_number: str, display_name: str):
+    """
+    Saves or updates the connection between a Vibelets User and a WhatsApp User.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO public.whatsapp_user_connections 
+            (user_id, whatsapp_id, phone_number, display_name, is_connected, connected_at, disconnected_at)
+            VALUES (%s, %s, %s, %s, TRUE, NOW(), NULL)
+            ON CONFLICT (user_id) 
+            DO UPDATE SET 
+                whatsapp_id = EXCLUDED.whatsapp_id,
+                phone_number = EXCLUDED.phone_number,
+                display_name = EXCLUDED.display_name,
+                is_connected = TRUE,
+                connected_at = NOW(),
+                disconnected_at = NULL;
+        """, (user_id, whatsapp_id, phone_number, display_name))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error saving whatsapp connection: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_whatsapp_connection(user_id: str):
+    """
+    Checks if a Vibelets user is connected to WhatsApp.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("""
+            SELECT 
+                is_connected as connected,
+                whatsapp_id,
+                phone_number,
+                display_name as name
+            FROM public.whatsapp_user_connections
+            WHERE user_id = %s AND is_connected = TRUE
+        """, (int(user_id),))
+        
+        return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
+    except ValueError:
+        return None
+    except Exception as e:
+        logger.error(f"Error getting whatsapp connection: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def disconnect_whatsapp_connection(user_id: str):
+    """
+    Disconnects a user from WhatsApp.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE public.whatsapp_user_connections
+            SET is_connected = FALSE, disconnected_at = NOW()
+            WHERE user_id = %s
+        """, (int(user_id),))
+        conn.commit()
+        return cursor.rowcount > 0
+    except ValueError:
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_whatsapp_user_by_phone(whatsapp_id: str):
+    """
+    Reverse lookup: WhatsApp ID (Phone ID usually) -> Vibelets User ID
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT user_id FROM public.whatsapp_user_connections
+            WHERE whatsapp_id = %s AND is_connected = TRUE
+        """, (whatsapp_id,))
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
+    finally:
+        cursor.close()
+        conn.close()

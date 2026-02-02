@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, Header
+from fastapi import APIRouter, Request, HTTPException, Query, BackgroundTasks, Header, Depends
 from services.whatsapp_service import handle_incoming_message
 from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
-from utils.db import get_whatsapp_connection, disconnect_whatsapp_connection
+from utils.postgres_db import get_whatsapp_connection, disconnect_whatsapp_connection
 from helpers.whatsapp_api import verify_whatsapp_signature
+from utils.auth import get_current_user
 import logging
 
 router = APIRouter()
@@ -71,7 +72,7 @@ async def receive_webhook(
         raise HTTPException(status_code=400, detail="Server Error")
 
 @router.get("/status")
-def get_connection_status(user_id: str):
+def get_connection_status(user_id: str = Depends(get_current_user)):
     """
     Checks if the user is connected to WhatsApp.
     """
@@ -85,7 +86,7 @@ def get_connection_status(user_id: str):
     return {"connected": False}
 
 @router.post("/disconnect")
-def disconnect_bot(user_id: str):
+def disconnect_bot(user_id: str = Depends(get_current_user)):
     """
     Disconnects the user from WhatsApp.
     """
@@ -95,7 +96,7 @@ def disconnect_bot(user_id: str):
     return {"ok": False, "message": "User not connected or user not found"}
 
 @router.get("/connect")
-def get_connect_link(user_id: str):
+def get_connect_link(user_id: str = Depends(get_current_user)):
     """
     Returns the WhatsApp Deep Link to start a chat and connect.
     NOTE: In production, you'd replace 'PHONE_NUMBER' with your actual bot number.

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks, Depends
 from fastapi.responses import RedirectResponse
 from schemas.slack import SlackEventWrapper
 from services.slack_service import handle_event
 from config import SLACK_CLIENT_ID, SLACK_REDIRECT_URI, SLACK_SIGNING_SECRET, SLACK_CLIENT_SECRET, DASHBOARD_URL
+from utils.auth import get_current_user
 
 from helpers.slack_api import verify_slack_request, authorize_slack_user, get_slack_user_info, publish_slack_message
 from utils.postgres_db import save_slack_connection, get_slack_connection, disconnect_slack_connection, get_team_token
@@ -13,6 +14,20 @@ import uuid
 
 router = APIRouter()
 
+"""
+1. GET /install
+Initiates the OAuth flow to install the bot (Redirects user to Slack).
+2. GET /oauth_callback
+Handles the callback from Slack, exchanging the code for a token and saving the connection.
+3. POST /disconnect
+Disconnects a user by removing their connection from the database.
+4. GET /status
+Checks if a specific Vibelets user is currently connected to Slack.
+5. POST /events
+The main webhook endpoint that receives all real-time events from Slack (messages, mentions, etc.).
+6. GET /events
+A simple health check endpoint just to say "OK".
+"""
 # --- OAuth Flow for "Atlassian-like" Connection ---
 
 @router.get("/install")
@@ -135,7 +150,7 @@ def oauth_callback(code: str, state: str = None):
     )
 
 @router.post("/disconnect")
-def disconnect_bot(user_id: str):
+def disconnect_bot(user_id: str = Depends(get_current_user)):
     """
     Disconnects the user from Slack by removing their connection details.
     """
@@ -165,7 +180,7 @@ def disconnect_bot(user_id: str):
     return {"ok": False, "message": "User not connected or user not found"}
 
 @router.get("/status")
-def get_connection_status(user_id: str):
+def get_connection_status(user_id: str = Depends(get_current_user)):
     """
     Checks if the user is connected to Slack.
     """
