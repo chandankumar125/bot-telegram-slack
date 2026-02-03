@@ -1,6 +1,7 @@
 from services.vibelets_service import resolve_query
 from utils.postgres_db import get_whatsapp_user_by_phone, save_whatsapp_connection, disconnect_whatsapp_connection
 from helpers.whatsapp_api import send_whatsapp_message, format_for_whatsapp
+from utils.auth import verify_state_token
 import logging
 
 
@@ -70,10 +71,17 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
         if text.lower().startswith("connect"):
             parts = text.split()
             if len(parts) > 1:
-                target_user_id = parts[1]
+                state = parts[1]
+                target_user_id = verify_state_token(state)
+                
+                if not target_user_id:
+                    logger.warning(f"Invalid or expired WhatsApp connect token: {state}")
+                    send_message(from_number, "❌ *Link Failed*: The connection code is invalid or has expired. Please try connecting again from the dashboard.")
+                    return {"ok": True}
+
                 import json
                 print("\n" + "="*50)
-                print(f"STAGE 2: Received WhatsApp Connection Command")
+                print(f"STAGE 2: Received WhatsApp Connection (Verified)")
                 print("-" * 50)
                 print(json.dumps({
                     "Command": "connect",

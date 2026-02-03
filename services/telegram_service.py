@@ -6,6 +6,7 @@ from config import TELEGRAM_BOT_TOKEN
 from services.vibelets_service import resolve_query
 from utils.postgres_db import get_telegram_user_by_chat_id, save_telegram_connection, get_telegram_connection
 from helpers.telegram_api import send_telegram_message as send_telegram_msg_helper
+from utils.auth import verify_state_token
 
 import asyncio
 
@@ -50,13 +51,19 @@ async def process_telegram_message(message):
 
     # 1. Handle Commands
     if text.startswith("/start"):
-        # Check for deep linking parameter (vibelets_user_id)
+        # Check for deep linking parameter (signed vibelets_user_id)
         params = text.split(" ")
         if len(params) > 1:
-            vibelets_user_id = params[1]
+            state = params[1]
+            vibelets_user_id = verify_state_token(state)
             
+            if not vibelets_user_id:
+                logger.warning(f"Invalid or expired Telegram start token: {state}")
+                await send_message(chat_id, "❌ *Link Failed*: The connection link is invalid or has expired. Please generate a new link from the dashboard.")
+                return
+
             print("\n" + "="*50)
-            print(f"STAGE 2: Received Callback/Start from Telegram")
+            print(f"STAGE 2: Received Callback/Start from Telegram (Verified)")
             print("-" * 50)
             print(json.dumps({
                 "User ID (Vibelets)": vibelets_user_id,

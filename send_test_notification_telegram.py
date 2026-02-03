@@ -6,12 +6,12 @@ import asyncio
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from services.telegram_service import send_message
-from utils.db import get_telegram_connection
+from utils.postgres_db import get_telegram_connection
 
 async def test_alert():
-    user_id = "VL_TEST_USER"
+    user_id = 1 # Using a numeric ID common in your DB schema
     
-    print(f"Fetching connection details for {user_id}...")
+    print(f"Fetching connection details for user_id={user_id}...")
     connection = get_telegram_connection(user_id)
     
     if not connection or not connection.get("connected"):

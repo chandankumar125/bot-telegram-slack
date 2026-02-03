@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 from schemas.slack import SlackEventWrapper
 from services.slack_service import handle_event
 from config import SLACK_CLIENT_ID, SLACK_REDIRECT_URI, SLACK_SIGNING_SECRET, SLACK_CLIENT_SECRET, DASHBOARD_URL
-from utils.auth import get_current_user
+from utils.auth import get_current_user, create_state_token, verify_state_token
 
 from helpers.slack_api import verify_slack_request, authorize_slack_user, get_slack_user_info, publish_slack_message
 from utils.postgres_db import save_slack_connection, get_slack_connection, disconnect_slack_connection, get_team_token
@@ -11,8 +11,10 @@ import time
 import json
 import requests
 import uuid
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 """
 1. GET /install
@@ -31,10 +33,10 @@ A simple health check endpoint just to say "OK".
 # --- OAuth Flow for "Atlassian-like" Connection ---
 
 @router.get("/install")
-def install_bot(user_id: str = "unknown"):
+def install_bot(user_id: str = Depends(get_current_user)):
     """ 
     Initiates the Slack OAuth flow.
-    Frontend 'Connect' button should link here: /bot/slack/install?user_id=1
+    Frontend 'Connect' button should link here: /bot/slack/install
     """
     if not SLACK_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Slack Client ID not configured")
@@ -42,8 +44,8 @@ def install_bot(user_id: str = "unknown"):
     # Scopes needed for the bot
     scopes = "app_mentions:read,chat:write,commands,im:history,users:read,users:read.email"
     
-    # Basic state to track user across redirect (Simple implementation)
-    state = f"{user_id}:{uuid.uuid4().hex[:8]}"
+    # Sign the state to prevent tampering and CSRF
+    state = create_state_token(user_id)
     
     auth_url = (
         f"https://slack.com/oauth/v2/authorize"
@@ -56,6 +58,7 @@ def install_bot(user_id: str = "unknown"):
     print(f"STAGE 1: Redirecting User to Slack Auth")
     print("-" * 50)
     print(json.dumps({
+        "User ID": user_id,
         "Client ID": SLACK_CLIENT_ID,
         "Scopes": scopes.split(","),
         "State": state
@@ -107,14 +110,25 @@ def oauth_callback(code: str, state: str = None):
     authed_user = data.get("authed_user", {})
     slack_user_id = authed_user.get("id")
     
-    # Parse state to get user_id
-    vibelets_user_id_str = state.split(":")[0] if state else "unknown"
+    # Verify and parse signed state to get user_id
+    if not state:
+        # 1. Enforce State Presence
+        logger.error("OAuth callback received without state parameter.")
+        raise HTTPException(status_code=400, detail="Missing state parameter. Connection failed.")
+        
+    # Verify the cryptographic signature of the state
+    vibelets_user_id_str = verify_state_token(state)
     
+    if not vibelets_user_id_str:
+        logger.error(f"Invalid or tampered state detected: {state}")
+        raise HTTPException(status_code=400, detail="Invalid session state or session expired. Please try connecting again.")
+
     try:
         vibelets_user_id = int(vibelets_user_id_str)
     except ValueError:
-        print(f"Warning: Non-numeric user_id '{vibelets_user_id_str}' detected. Using ID 1 for testing purposes.")
-        vibelets_user_id = 1
+        # 3. Secure Failure
+        logger.error(f"Non-numeric user_id '{vibelets_user_id_str}' in verified state.")
+        raise HTTPException(status_code=400, detail="Invalid user identification in state.")
 
     # Fetch User Email
     email = None
@@ -194,8 +208,7 @@ def get_connection_status(user_id: str = Depends(get_current_user)):
             "team_id": connection.get("team_id"),
             "slack_user_id": connection.get("slack_user_id"),
             "email": connection.get("email"),
-            "bot_user_id": connection.get("bot_user_id"),
-            "access_token": token
+            "bot_user_id": connection.get("bot_user_id")
         }
     return {"connected": False}
 
@@ -219,8 +232,17 @@ async def slack_events(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid payload: {str(e)}")
     
+    import logging
+    logger = logging.getLogger(__name__)
+
     # Verify signature for security (skip for url_verification)
-    if payload.type != "url_verification" and SLACK_SIGNING_SECRET:
+    if payload.type != "url_verification":
+        
+        # 1. Essential Check: Secret MUST exist
+        if not SLACK_SIGNING_SECRET:
+             logger.error("SLACK_SIGNING_SECRET is not configured!")
+             raise HTTPException(status_code=500, detail="Server misconfiguration: Missing Signing Secret")
+
         if not x_slack_signature or not x_slack_request_timestamp:
             raise HTTPException(status_code=401, detail="Missing Slack signature headers")
         

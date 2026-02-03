@@ -3,7 +3,7 @@ from services.whatsapp_service import handle_incoming_message
 from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET
 from utils.postgres_db import get_whatsapp_connection, disconnect_whatsapp_connection
 from helpers.whatsapp_api import verify_whatsapp_signature
-from utils.auth import get_current_user
+from utils.auth import get_current_user, create_state_token
 import logging
 
 router = APIRouter()
@@ -113,7 +113,8 @@ def get_connect_link(user_id: str = Depends(get_current_user)):
     import re
     clean_number = re.sub(r'[^0-9]', '', bot_number)
     
-    text = f"Connect {user_id}"
+    state = create_state_token(user_id)
+    text = f"Connect {state}"
     link = f"https://wa.me/{clean_number}?text={text}"
     
     return {"link": link}

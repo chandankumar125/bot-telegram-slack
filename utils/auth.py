@@ -8,6 +8,7 @@ Middleware/Auth Logic: Created utils/auth.py
 which contains:
 * verify_jwt(authorization): Decodes and validates the Authorization: Bearer <token> header.
 * get_current_user(...) : A FastAPI dependency that extracts and returns the user_id from the valid token.
+
 """
 
 def create_access_token(user_id: str):
@@ -20,6 +21,28 @@ def create_access_token(user_id: str):
     }
     encoded_jwt = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
+
+def create_state_token(user_id: str):
+    """
+    Creates a signed state token for OAuth flows to prevent tampering.
+    Includes a short expiry (15 minutes).
+    """
+    payload = {
+        "user_id": str(user_id),
+        "nonce": datetime.datetime.utcnow().timestamp(),
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_state_token(state_token: str):
+    """
+    Verifies the OAuth state token and returns the user_id.
+    """
+    try:
+        payload = jwt.decode(state_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload.get("user_id")
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
 
 async def verify_jwt(authorization: str = Header(None)):
     """

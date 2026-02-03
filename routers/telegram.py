@@ -3,7 +3,7 @@ import json
 from services.telegram_service import handle_update, get_bot_username, send_message
 from utils.postgres_db import disconnect_telegram_connection, get_telegram_connection
 from schemas.telegram import TelegramUpdate
-from utils.auth import get_current_user
+from utils.auth import get_current_user, create_state_token
 import logging
 
 router = APIRouter()
@@ -31,7 +31,8 @@ async def connect_link(user_id: str = Depends(get_current_user)):
         
     try:
         username = await get_bot_username()
-        link = f"https://t.me/{username}?start={user_id}"
+        state = create_state_token(user_id)
+        link = f"https://t.me/{username}?start={state}"
         
         print("\n" + "="*50)
         print(f"STAGE 1: Telegram Connect Link Generated")

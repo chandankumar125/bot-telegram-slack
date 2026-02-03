@@ -55,15 +55,21 @@ def save_slack_connection(user_id: int, team_id: str, team_name: str, access_tok
         
         workspace_id = cursor.fetchone()[0]
         
-        # 2. Upsert(Update or Insert) Slack User Connection
-        # user_id must be INT. If not (e.g. 'unknown'), try to handle or fail.
-        # We'll allow it to fail if invalid type, as per schema.
-        
+        # 2. Maintain 1-to-1 Linkage
+        # a) Disconnect any other Slack account previously linked to this Vibelets User
+        # b) Disconnect any other Vibelets User previously linked to this Slack Account (Stealing logic)
+        cursor.execute("""
+            UPDATE public.slack_user_connections 
+            SET is_connected = FALSE, disconnected_at = NOW() 
+            WHERE (user_id = %s OR slack_user_id = %s) AND is_connected = TRUE
+        """, (user_id, slack_user_id))
+
+        # 3. Insert new Connection (Partial Index handles concurrency)
         cursor.execute("""
             INSERT INTO public.slack_user_connections
-            (workspace_id, user_id, slack_user_id, slack_email, is_connected, connected_at)
-            VALUES (%s, %s, %s, %s, TRUE, NOW())
-            ON CONFLICT (slack_user_id)
+            (workspace_id, user_id, slack_user_id, slack_email, is_connected, connected_at, disconnected_at)
+            VALUES (%s, %s, %s, %s, TRUE, NOW(), NULL)
+            ON CONFLICT (slack_user_id) WHERE is_connected = TRUE
             DO UPDATE SET
                 workspace_id = EXCLUDED.workspace_id,
                 user_id = EXCLUDED.user_id,
@@ -241,7 +247,7 @@ def get_connection_by_slack_user_id(slack_user_id: str):
                 sw.bot_user_id
             FROM public.slack_user_connections suc
             JOIN public.slack_workspaces sw ON sw.id = suc.workspace_id
-            WHERE suc.slack_user_id = %s
+            WHERE suc.slack_user_id = %s AND suc.is_connected = TRUE
         """, (slack_user_id,))
         
         row = cursor.fetchone()
