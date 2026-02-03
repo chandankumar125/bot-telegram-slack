@@ -36,7 +36,7 @@ A simple health check endpoint just to say "OK".
 def install_bot(user_id: str = Depends(get_current_user)):
     """ 
     Initiates the Slack OAuth flow.
-    Frontend 'Connect' button should link here: /bot/slack/install
+    Frontend should call this via fetch() with JWT, then redirect to the 'url' returned.
     """
     if not SLACK_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Slack Client ID not configured")
@@ -54,17 +54,9 @@ def install_bot(user_id: str = Depends(get_current_user)):
         f"&redirect_uri={SLACK_REDIRECT_URI}"
         f"&state={state}"
     )
-    print("\n" + "="*50)
-    print(f"STAGE 1: Redirecting User to Slack Auth")
-    print("-" * 50)
-    print(json.dumps({
-        "User ID": user_id,
-        "Client ID": SLACK_CLIENT_ID,
-        "Scopes": scopes.split(","),
-        "State": state
-    }, indent=2))
-    print("="*50 + "\n")
-    return RedirectResponse(auth_url)
+    
+    logger.info(f"Generated Slack Auth URL for User {user_id}")
+    return {"url": auth_url} 
 
 @router.get("/oauth_callback")
 def oauth_callback(code: str, state: str = None):

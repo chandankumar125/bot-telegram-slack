@@ -44,7 +44,7 @@ async def connect_link(user_id: str = Depends(get_current_user)):
         }, indent=2))
         print("="*50 + "\n")
         
-        return {"link": link}
+        return {"url": link}
     except Exception as e:
         logger.error(f"Failed to generate Telegram link: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")

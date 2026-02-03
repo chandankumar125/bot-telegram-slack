@@ -12,13 +12,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // ACTUALLY, let's just generate one on the fly or provide a dummy one that works if you didn't change the secret.
     // The token above is valid for secret "your-secret-key" and user "1".
 
-    // 1. Setup Slack Link (Still uses query param for initial OAuth redirection as that goes to Slack first)
-    const slackBtn = document.getElementById('slack-connect-btn');
-    if (slackBtn) {
-        slackBtn.href = `/bot/slack/install?user_id=${userId}`;
-    }
-
-    // 2. Setup Telegram & WhatsApp Links
+    // 1. Setup Connection Links
+    fetchSlackLink(authToken);
     fetchTelegramLink(authToken);
     fetchWhatsAppLink(authToken);
 
@@ -41,6 +36,22 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('focus', checkAllStatuses);
 });
 
+async function fetchSlackLink(token) {
+    try {
+        const res = await fetch(`/bot/slack/install`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        const btn = document.getElementById('slack-connect-btn');
+        if (btn && data.url) {
+            btn.href = data.url;
+        }
+    } catch (e) {
+        console.error("Failed to get Slack link", e);
+    }
+}
+
+
 async function fetchWhatsAppLink(token) {
     try {
         const res = await fetch(`/bot/whatsapp/connect`, {
@@ -48,8 +59,8 @@ async function fetchWhatsAppLink(token) {
         });
         const data = await res.json();
         const btn = document.getElementById('whatsapp-connect-btn');
-        if (btn && data.link) {
-            btn.href = data.link;
+        if (btn && data.url) {
+            btn.href = data.url;
         }
     } catch (e) {
         console.error("Failed to get WhatsApp link", e);
@@ -63,8 +74,8 @@ async function fetchTelegramLink(token) {
         });
         const data = await res.json();
         const btn = document.getElementById('telegram-connect-btn');
-        if (btn && data.link) {
-            btn.href = data.link;
+        if (btn && data.url) {
+            btn.href = data.url;
         }
     } catch (e) {
         console.error("Failed to get Telegram link", e);
@@ -141,16 +152,12 @@ function updateCardUI(platform, isConnected, label, token) {
         btn.style.background = ''; // Reset
 
         // Restore Link (For Slack we still use the href redirect for now as it's OAuth)
+        // Restore Link
         if (platform === 'slack') {
-            // For Slack install, we still need the user_id in the param 
-            // because it redirects to an external site (Slack) and we can't pass headers there.
-            // Ideally, we would have an interim backend endpoint to redirect.
-            // But valid assumption for now:
-            const userId = '1'; // or parse from token if needed
-            btn.href = `/bot/slack/install?user_id=${userId}`;
+            fetchSlackLink(token);
             btn.onclick = null;
         } else if (platform === 'telegram') {
-            fetchTelegramLink(token); // Re-fetch logic
+            fetchTelegramLink(token);
             btn.onclick = null;
         } else if (platform === 'whatsapp') {
             fetchWhatsAppLink(token);

@@ -117,4 +117,4 @@ def get_connect_link(user_id: str = Depends(get_current_user)):
     text = f"Connect {state}"
     link = f"https://wa.me/{clean_number}?text={text}"
     
-    return {"link": link}
+    return {"url": link}
