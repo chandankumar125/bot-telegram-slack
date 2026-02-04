@@ -228,12 +228,24 @@ def publish_slack_message(
             payload["blocks"] = blocks
             
         response = requests.post(url, headers=headers, json=payload)
+        
+        # Log the response for debugging
+        try:
+            response_data = response.json()
+        except:
+            response_data = {"error": "Invalid JSON response", "text": response.text}
+        
+        # Log full response for debugging
+        print(f"\nDEBUG: Slack API Response:")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response: {json.dumps(response_data, indent=2)}")
+        
         response.raise_for_status()
         
-        response_data = response.json()
-        
         if not response_data.get("ok"):
-            raise Exception(f"Failed to publish message: {response_data.get('error')}")
+            error_msg = response_data.get('error', 'Unknown error')
+            error_detail = response_data.get('response_metadata', {}).get('messages', [])
+            raise Exception(f"Failed to publish message: {error_msg}. Details: {error_detail}")
             
         return response_data
         

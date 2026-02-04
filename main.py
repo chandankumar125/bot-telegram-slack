@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from routers import slack, notifications, telegram, whatsapp
 from config import VIBELETS_API_KEY, SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN, WHATSAPP_ACCESS_TOKEN
+from utils.token_refresh_cron import start_token_scheduler
+from helpers import postgresql
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +25,17 @@ async def startup_event():
         logger.warning("⚠️  TELEGRAM_BOT_TOKEN is not set. Telegram integration will not work.")
     if not WHATSAPP_ACCESS_TOKEN:
         logger.warning("⚠️  WHATSAPP_ACCESS_TOKEN is not set. WhatsApp integration will not work.")
+    
+    # Connect to PostgreSQL
+    await postgresql.connect()
+
+    # Start Background Cron Jobs
+    start_token_scheduler()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    await postgresql.disconnect()
 
 
 app.include_router(slack.router, prefix="/bot/slack")
@@ -32,6 +45,7 @@ app.include_router(notifications.router, prefix="/bot")
 
 # Mount Dashboard Frontend
 app.mount("/dashboard", StaticFiles(directory="static", html=True), name="dashboard")
+
 
 @app.get("/health")
 def health():

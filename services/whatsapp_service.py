@@ -24,7 +24,7 @@ def send_message(to_number: str, text: str):
 
 from schemas.whatsapp import WhatsAppWebhookPayload
 
-def handle_incoming_message(payload: WhatsAppWebhookPayload):
+async def handle_incoming_message(payload: WhatsAppWebhookPayload):
     """
     Process incoming WhatsApp webhook payload.
     """
@@ -65,7 +65,7 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
         # --- Logic Handling ---
         
         # 1. Check Connection
-        vibelets_user_id = get_whatsapp_user_by_phone(from_number)
+        vibelets_user_id = await get_whatsapp_user_by_phone(from_number)
         
         # 2. Handle Connect Command
         if text.lower().startswith("connect"):
@@ -91,14 +91,29 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
                 }, indent=2))
                 print("="*50 + "\n")
 
-                save_whatsapp_connection(target_user_id, from_number, from_number, contact_name)
+                result = await save_whatsapp_connection(target_user_id, from_number, from_number, contact_name)
                 
-                msg = (
-                    f"✅ *Connected Successfully!*\n"
-                    f"Hello {contact_name}, your WhatsApp is now linked to Vibelets account `{target_user_id}`.\n"
-                    f"You can now ask me questions about your ad campaigns."
-                )
-                send_message(from_number, msg)
+                if result.get("success"):
+                    for conflict in result.get("conflicts", []):
+                        old_chat_id = conflict.get('chat_id') # In WhatsApp logic, this is the phone number
+                        old_user_id = conflict.get('user_id')
+
+                        # Scenario 1: Same Vibelets User, different WhatsApp number
+                        if str(old_user_id) == str(target_user_id) and str(old_chat_id) != str(from_number):
+                            send_message(old_chat_id, "⚠️ *Connection Moved*: Your Vibelets account has been linked to a new WhatsApp number. This session is now disconnected.")
+                        
+                        # Scenario 2: Different Vibelets User, same WhatsApp number (Stealing)
+                        elif str(old_chat_id) == str(from_number) and str(old_user_id) != str(target_user_id):
+                            send_message(from_number, f"⚠️ *Account Reclaimed*: This WhatsApp account was previously linked to User `{old_user_id}`. It has now been linked to your current account `{target_user_id}`.")
+
+                    msg = (
+                        f"✅ *Connected Successfully!*\n"
+                        f"Hello {contact_name}, your WhatsApp is now linked to Vibelets account `{target_user_id}`.\n"
+                        f"You can now ask me questions about your ad campaigns."
+                    )
+                    send_message(from_number, msg)
+                else:
+                    send_message(from_number, f"❌ *Connection Failed*: {result.get('error', 'Unknown error')}")
                 return {"ok": True}
             else:
                  msg = (
@@ -120,7 +135,7 @@ def handle_incoming_message(payload: WhatsAppWebhookPayload):
 
         # 3. Handle Disconnect
         if text.lower().strip() == "disconnect":
-             disconnect_whatsapp_connection(vibelets_user_id)
+             await disconnect_whatsapp_connection(vibelets_user_id)
              send_message(from_number, "⚠️ You have been disconnected.")
              return {"ok": True}
 

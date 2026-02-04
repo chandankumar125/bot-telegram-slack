@@ -1,46 +1,28 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import logging
-from config import DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT
 import time
 
 logger = logging.getLogger(__name__)
 
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            port=DB_PORT
-        )
-        return conn
-    except Exception as e:
-        logger.error(f"Error connecting to database: {e}")
-        raise e
+from helpers import postgresql
+import datetime
+
 # Vibelets/ADU User ID as as input parameter: Slack User → ADU User ID.
-def save_slack_connection(user_id: int, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str, refresh_token: str = None, expires_in: int = None, email: str = None):
+async def save_slack_connection(user_id: int, team_id: str, team_name: str, access_token: str, bot_user_id: str, slack_user_id: str, refresh_token: str = None, expires_in: int = None, email: str = None):
     """
     Saves the Slack workspace and Slack user connection to PostgreSQL.
-    Saves the Company info (Team ID, Name, Token) into slack_workspaces.
-    Saves the User link (Slack ID ↔ Vibelets ID) into slack_user_connections.
+    Implements Stealing Logic: Disconnects any other Slack account linked to this user_id
+    or any other user_id linked to this slack_user_id.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     try:
-        # 1. Upsert(Update or Insert) Slack Workspace
+        # 1. Upsert Workspace
         expires_at = None
         if expires_in:
-             import datetime
              expires_at = datetime.datetime.now() + datetime.timedelta(seconds=expires_in)
 
-        # Upsert Workspace
-        cursor.execute("""
+        sql_workspace = """
             INSERT INTO public.slack_workspaces 
             (team_id, team_name, bot_user_id, access_token, refresh_token, token_expires_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
             ON CONFLICT (team_id) 
             DO UPDATE SET 
                 team_name = EXCLUDED.team_name,
@@ -51,24 +33,32 @@ def save_slack_connection(user_id: int, team_id: str, team_name: str, access_tok
                 updated_at = NOW(),
                 is_active = TRUE
             RETURNING id;
-        """, (team_id, team_name, bot_user_id, access_token, refresh_token, expires_at))
+        """
+        rows = await postgresql.query(sql_workspace, team_id, team_name, bot_user_id, access_token, refresh_token, expires_at)
+        workspace_id = rows[0]['id']
         
-        workspace_id = cursor.fetchone()[0]
-        
-        # 2. Maintain 1-to-1 Linkage
-        # a) Disconnect any other Slack account previously linked to this Vibelets User
-        # b) Disconnect any other Vibelets User previously linked to this Slack Account (Stealing logic)
-        cursor.execute("""
+        # 2. Identify Conflicts (Stealing & Replacement)
+        sql_conflicts = """
+            SELECT suc.user_id, suc.slack_user_id, sw.team_id 
+            FROM public.slack_user_connections suc
+            JOIN public.slack_workspaces sw ON sw.id = suc.workspace_id
+            WHERE (suc.user_id = $1 OR suc.slack_user_id = $2) AND suc.is_connected = TRUE
+        """
+        conflicts = await postgresql.query(sql_conflicts, user_id, slack_user_id)
+
+        # 3. Clear Conflicts
+        sql_update_conflicts = """
             UPDATE public.slack_user_connections 
             SET is_connected = FALSE, disconnected_at = NOW() 
-            WHERE (user_id = %s OR slack_user_id = %s) AND is_connected = TRUE
-        """, (user_id, slack_user_id))
+            WHERE (user_id = $1 OR slack_user_id = $2) AND is_connected = TRUE
+        """
+        await postgresql.query(sql_update_conflicts, user_id, slack_user_id)
 
-        # 3. Insert new Connection (Partial Index handles concurrency)
-        cursor.execute("""
+        # 4. Insert new Connection
+        sql_insert_conn = """
             INSERT INTO public.slack_user_connections
             (workspace_id, user_id, slack_user_id, slack_email, is_connected, connected_at, disconnected_at)
-            VALUES (%s, %s, %s, %s, TRUE, NOW(), NULL)
+            VALUES ($1, $2, $3, $4, TRUE, NOW(), NULL)
             ON CONFLICT (slack_user_id) WHERE is_connected = TRUE
             DO UPDATE SET
                 workspace_id = EXCLUDED.workspace_id,
@@ -78,109 +68,91 @@ def save_slack_connection(user_id: int, team_id: str, team_name: str, access_tok
                 connected_at = NOW(),
                 disconnected_at = NULL
             RETURNING id;
-        """, (workspace_id, user_id, slack_user_id, email))
+        """
+        await postgresql.query(sql_insert_conn, workspace_id, user_id, slack_user_id, email)
         
-        conn.commit()
-        return True
+        return {"success": True, "conflicts": conflicts}
         
     except Exception as e:
-        conn.rollback()
         logger.error(f"Error saving slack connection: {e}")
-        raise e
-    finally:
-        cursor.close()
-        conn.close()
+        return {"success": False, "error": str(e)}
 
-def get_team_token(team_id: str):
+async def get_team_token(team_id: str):
     """
     Retrieves the Slack Workspace configuration (Token, Expiry) for a given Team ID.
     Internal token management. Action: Fetches the raw token for API calls.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
-            SELECT access_token FROM public.slack_workspaces WHERE team_id = %s
-        """, (team_id,))
-        row = cursor.fetchone()
-        if row:
-            return row[0]
+        sql = "SELECT access_token FROM public.slack_workspaces WHERE team_id = $1"
+        rows = await postgresql.query(sql, team_id)
+        if rows:
+            return rows[0].get('access_token')
         return None
-    finally:
-        cursor.close()
-        conn.close()
+    except Exception as e:
+        logger.error(f"Error in get_team_token: {e}")
+        return None
 
-def get_team_data(team_id: str):
-
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
+async def get_team_data(team_id: str):
     try:
-        cursor.execute("""
+        sql = """
             SELECT 
                 team_id, access_token, refresh_token, 
                 token_expires_at as expires_at
             FROM public.slack_workspaces 
-            WHERE team_id = %s
-        """, (team_id,))
-        row = cursor.fetchone()
-        if row and row.get('expires_at'):
-             row['expires_at'] = row['expires_at'].timestamp()
-        
-        return dict(row) if row else None
-    finally:
-        cursor.close()
-        conn.close()
+            WHERE team_id = $1
+        """
+        rows = await postgresql.query(sql, team_id)
+        if rows:
+            row = rows[0]
+            if row.get('expires_at'):
+                 row['expires_at'] = row['expires_at'].timestamp()
+            return row
+        return None
+    except Exception as e:
+        logger.error(f"Error in get_team_data: {e}")
+        return None
 
-def update_team_token(team_id: str, access_token: str, refresh_token: str, expires_in: int):
+async def update_team_token(team_id: str, access_token: str, refresh_token: str, expires_in: int):
     """
     Internal token management
     Updates the token if it was refreshed.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        import datetime
         expires_at = datetime.datetime.now() + datetime.timedelta(seconds=expires_in)
-        
-        cursor.execute("""
+        sql = """
             UPDATE public.slack_workspaces
-            SET access_token = %s, refresh_token = %s, token_expires_at = %s, updated_at = NOW()
-            WHERE team_id = %s
-        """, (access_token, refresh_token, expires_at, team_id))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+            SET access_token = $1, refresh_token = $2, token_expires_at = $3, updated_at = NOW()
+            WHERE team_id = $4
+        """
+        await postgresql.query(sql, access_token, refresh_token, expires_at, team_id)
+    except Exception as e:
+        logger.error(f"Error in update_team_token: {e}")
 
-def get_vibelets_user_by_slack_id(slack_user_id: str):
+async def get_vibelets_user_by_slack_id(slack_user_id: str):
     """
     Reverse lookup. Finds the ADU User ID associated with a given Slack User ID.
     Used when a message arrives from Slack.
     Returns the Vibelets user_id so the bot knows whose data to fetch.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             SELECT user_id FROM public.slack_user_connections 
-            WHERE slack_user_id = %s AND is_connected = TRUE
-        """, (slack_user_id,))
-        row = cursor.fetchone()
-        if row:
-            return str(row[0]) 
+            WHERE slack_user_id = $1 AND is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, slack_user_id)
+        if rows:
+            return str(rows[0].get('user_id')) 
         return None
-    finally:
-        cursor.close()
-        conn.close()
+    except Exception as e:
+        logger.error(f"Error in get_vibelets_user_by_slack_id: {e}")
+        return None
 
-def get_slack_connection(user_id: str):
+async def get_slack_connection(user_id: str):
     """
     Checks "Is this Vibelets User (ID: 5) connected to Slack?"
     """
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute("""
+        sql = """
             SELECT 
                 suc.is_connected as connected,
                 suc.slack_user_id,
@@ -190,87 +162,89 @@ def get_slack_connection(user_id: str):
                 sw.bot_user_id
             FROM public.slack_user_connections suc
             JOIN public.slack_workspaces sw ON sw.id = suc.workspace_id
-            WHERE suc.user_id = %s AND suc.is_connected = TRUE
+            WHERE suc.user_id = $1 AND suc.is_connected = TRUE
             ORDER BY suc.id DESC
             LIMIT 1
-        """, (int(user_id),))
-        
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
+        """
+        rows = await postgresql.query(sql, int(user_id))
+        return rows[0] if rows else None
+    except (ValueError, Exception) as e:
+        logger.error(f"Error in get_slack_connection for user_id {user_id}: {e}")
         return None
-    except ValueError:
-        logger.error(f"get_slack_connection: user_id '{user_id}' is not an integer.")
-        return None
-    except Exception as e:
-        logger.error(f"Error in get_slack_connection: {e}")
-        return None
-    finally:
-        if 'cursor' in locals():
-             cursor.close()
-        if 'conn' in locals():
-             conn.close()
 
-def disconnect_slack_connection(user_id: str):
+async def disconnect_slack_connection(user_id: str):
     """
     Goal: Unlinks the user. Action: Sets is_connected = FALSE in the database. 
     It does not delete the row (allows for history/audit), just deactivates it.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             UPDATE public.slack_user_connections
             SET is_connected = FALSE, disconnected_at = NOW()
-            WHERE user_id = %s
-        """, (user_id,))
-        
-        conn.commit()
-        return cursor.rowcount > 0
-    finally:
-        cursor.close()
-        conn.close()
+            WHERE user_id = $1
+        """
+        # Note: asyncpg query returns rows, for UPDATE we can check length but usually we just want to know if it ran.
+        # However, our helper query() returns list of dicts.
+        await postgresql.query(sql, int(user_id))
+        return True
+    except Exception as e:
+        logger.error(f"Error in disconnect_slack_connection: {e}")
+        return False
 
-def get_connection_by_slack_user_id(slack_user_id: str):
+async def get_connection_by_slack_user_id(slack_user_id: str):
     """
     Finds the team_id and token for a given slack_user_id.
     Used for notifications.
     Finds the user, checks which Workspace they belong to, and returns that Workspace's access_token
     """
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute("""
+        sql = """
             SELECT 
                 sw.team_id,
                 sw.access_token,
                 sw.bot_user_id
             FROM public.slack_user_connections suc
             JOIN public.slack_workspaces sw ON sw.id = suc.workspace_id
-            WHERE suc.slack_user_id = %s AND suc.is_connected = TRUE
-        """, (slack_user_id,))
-        
-        row = cursor.fetchone()
-        return dict(row) if row else None
-    finally:
-        cursor.close()
-        conn.close()
+            WHERE suc.slack_user_id = $1 AND suc.is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, slack_user_id)
+        return rows[0] if rows else None
+    except Exception as e:
+        logger.error(f"Error in get_connection_by_slack_user_id: {e}")
+        return None
 
 # -------------------------------------------------------------------------
 # TELEGRAM DATABASE FUNCTIONS
 # -------------------------------------------------------------------------
 
-def save_telegram_connection(user_id: int, chat_id: str, username: str, first_name: str, last_name: str):
+async def save_telegram_connection(user_id: int, chat_id: str, username: str, first_name: str, last_name: str):
     """
     Saves or updates the connection between a Vibelets User and a Telegram User.
+    Implements Stealing Logic: Disconnects any other user currently linked to this chat_id
+    or any other chat_id currently linked to this user_id.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        # 1. Identify Conflicts
+        sql_conflicts = """
+            SELECT user_id, chat_id 
+            FROM public.telegram_user_connections 
+            WHERE (user_id = $1 OR chat_id = $2) AND is_connected = TRUE
+        """
+        conflicts = await postgresql.query(sql_conflicts, user_id, chat_id)
+
+        # 2. Clear Conflicts
+        sql_clear = """
+            UPDATE public.telegram_user_connections 
+            SET is_connected = FALSE, disconnected_at = NOW() 
+            WHERE (user_id = $1 OR chat_id = $2) AND is_connected = TRUE
+        """
+        await postgresql.query(sql_clear, user_id, chat_id)
+
+        # 3. Upsert new connection
+        sql_upsert = """
             INSERT INTO public.telegram_user_connections 
             (user_id, chat_id, username, first_name, last_name, is_connected, connected_at, disconnected_at)
-            VALUES (%s, %s, %s, %s, %s, TRUE, NOW(), NULL)
+            VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NULL)
             ON CONFLICT (user_id) 
             DO UPDATE SET 
                 chat_id = EXCLUDED.chat_id,
@@ -280,98 +254,98 @@ def save_telegram_connection(user_id: int, chat_id: str, username: str, first_na
                 is_connected = TRUE,
                 connected_at = NOW(),
                 disconnected_at = NULL;
-        """, (user_id, chat_id, username, first_name, last_name))
+        """
+        await postgresql.query(sql_upsert, user_id, chat_id, username, first_name, last_name)
         
-        conn.commit()
-        return True
+        return {"success": True, "conflicts": conflicts}
     except Exception as e:
-        conn.rollback()
         logger.error(f"Error saving telegram connection: {e}")
-        return False
-    finally:
-        cursor.close()
-        conn.close()
+        return {"success": False, "error": str(e)}
 
-def get_telegram_connection(user_id: str):
+async def get_telegram_connection(user_id: str):
     """
     Checks if a Vibelets user is connected to Telegram.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute("""
+        sql = """
             SELECT 
                 is_connected as connected,
                 chat_id,
                 username,
                 first_name
             FROM public.telegram_user_connections
-            WHERE user_id = %s AND is_connected = TRUE
-        """, (int(user_id),))
-        
-        return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
-    except ValueError:
-         return None
-    except Exception as e:
-        logger.error(f"Error getting telegram connection: {e}")
+            WHERE user_id = $1 AND is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, int(user_id))
+        return rows[0] if rows else None
+    except (ValueError, Exception) as e:
+        logger.error(f"Error getting telegram connection for user_id {user_id}: {e}")
         return None
-    finally:
-        cursor.close()
-        conn.close()
 
-def disconnect_telegram_connection(user_id: str):
+async def disconnect_telegram_connection(user_id: str):
     """
     Disconnects a user from Telegram.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             UPDATE public.telegram_user_connections
             SET is_connected = FALSE, disconnected_at = NOW()
-            WHERE user_id = %s
-        """, (int(user_id),))
-        conn.commit()
-        return cursor.rowcount > 0
-    except ValueError:
+            WHERE user_id = $1
+        """
+        await postgresql.query(sql, int(user_id))
+        return True
+    except (ValueError, Exception) as e:
+        logger.error(f"Error disconnecting telegram for user_id {user_id}: {e}")
         return False
-    finally:
-        cursor.close()
-        conn.close()
 
-def get_telegram_user_by_chat_id(chat_id: str):
+async def get_telegram_user_by_chat_id(chat_id: str):
     """
     Reverse lookup: Telegram Chat ID -> Vibelets User ID
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             SELECT user_id FROM public.telegram_user_connections
-            WHERE chat_id = %s AND is_connected = TRUE
-        """, (chat_id,))
-        row = cursor.fetchone()
-        return str(row[0]) if row else None
-    finally:
-        cursor.close()
-        conn.close()
+            WHERE chat_id = $1 AND is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, chat_id)
+        return str(rows[0].get('user_id')) if rows else None
+    except Exception as e:
+        logger.error(f"Error in get_telegram_user_by_chat_id: {e}")
+        return None
 
 
 # -------------------------------------------------------------------------
 # WHATSAPP DATABASE FUNCTIONS
 # -------------------------------------------------------------------------
 
-def save_whatsapp_connection(user_id: int, whatsapp_id: str, phone_number: str, display_name: str):
+async def save_whatsapp_connection(user_id: int, whatsapp_id: str, phone_number: str, display_name: str):
     """
     Saves or updates the connection between a Vibelets User and a WhatsApp User.
+    Implements Stealing Logic: Disconnects any other user currently linked to this whatsapp_id
+    or any other whatsapp_id currently linked to this user_id.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        # 1. Identify Conflicts
+        sql_conflicts = """
+            SELECT user_id, whatsapp_id as chat_id
+            FROM public.whatsapp_user_connections 
+            WHERE (user_id = $1 OR whatsapp_id = $2) AND is_connected = TRUE
+        """
+        conflicts = await postgresql.query(sql_conflicts, user_id, whatsapp_id)
+
+        # 2. Clear Conflicts
+        sql_clear = """
+            UPDATE public.whatsapp_user_connections 
+            SET is_connected = FALSE, disconnected_at = NOW() 
+            WHERE (user_id = $1 OR whatsapp_id = $2) AND is_connected = TRUE
+        """
+        await postgresql.query(sql_clear, user_id, whatsapp_id)
+
+        # 3. Upsert new connection
+        sql_upsert = """
             INSERT INTO public.whatsapp_user_connections 
             (user_id, whatsapp_id, phone_number, display_name, is_connected, connected_at, disconnected_at)
-            VALUES (%s, %s, %s, %s, TRUE, NOW(), NULL)
+            VALUES ($1, $2, $3, $4, TRUE, NOW(), NULL)
             ON CONFLICT (user_id) 
             DO UPDATE SET 
                 whatsapp_id = EXCLUDED.whatsapp_id,
@@ -380,78 +354,61 @@ def save_whatsapp_connection(user_id: int, whatsapp_id: str, phone_number: str, 
                 is_connected = TRUE,
                 connected_at = NOW(),
                 disconnected_at = NULL;
-        """, (user_id, whatsapp_id, phone_number, display_name))
+        """
+        await postgresql.query(sql_upsert, user_id, whatsapp_id, phone_number, display_name)
         
-        conn.commit()
-        return True
+        return {"success": True, "conflicts": conflicts}
     except Exception as e:
-        conn.rollback()
         logger.error(f"Error saving whatsapp connection: {e}")
-        return False
-    finally:
-        cursor.close()
-        conn.close()
+        return {"success": False, "error": str(e)}
 
-def get_whatsapp_connection(user_id: str):
+async def get_whatsapp_connection(user_id: str):
     """
     Checks if a Vibelets user is connected to WhatsApp.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute("""
+        sql = """
             SELECT 
                 is_connected as connected,
                 whatsapp_id,
                 phone_number,
                 display_name as name
             FROM public.whatsapp_user_connections
-            WHERE user_id = %s AND is_connected = TRUE
-        """, (int(user_id),))
-        
-        return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
-    except ValueError:
+            WHERE user_id = $1 AND is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, int(user_id))
+        return rows[0] if rows else None
+    except (ValueError, Exception) as e:
+        logger.error(f"Error getting whatsapp connection for user_id {user_id}: {e}")
         return None
-    except Exception as e:
-        logger.error(f"Error getting whatsapp connection: {e}")
-        return None
-    finally:
-        cursor.close()
-        conn.close()
 
-def disconnect_whatsapp_connection(user_id: str):
+async def disconnect_whatsapp_connection(user_id: str):
     """
     Disconnects a user from WhatsApp.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             UPDATE public.whatsapp_user_connections
             SET is_connected = FALSE, disconnected_at = NOW()
-            WHERE user_id = %s
-        """, (int(user_id),))
-        conn.commit()
-        return cursor.rowcount > 0
-    except ValueError:
+            WHERE user_id = $1
+        """
+        await postgresql.query(sql, int(user_id))
+        return True
+    except (ValueError, Exception) as e:
+        logger.error(f"Error disconnecting whatsapp for user_id {user_id}: {e}")
         return False
-    finally:
-        cursor.close()
-        conn.close()
 
-def get_whatsapp_user_by_phone(whatsapp_id: str):
+async def get_whatsapp_user_by_phone(whatsapp_id: str):
     """
     Reverse lookup: WhatsApp ID (Phone ID usually) -> Vibelets User ID
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
+        sql = """
             SELECT user_id FROM public.whatsapp_user_connections
-            WHERE whatsapp_id = %s AND is_connected = TRUE
-        """, (whatsapp_id,))
-        row = cursor.fetchone()
-        return str(row[0]) if row else None
-    finally:
-        cursor.close()
-        conn.close()
+            WHERE whatsapp_id = $1 AND is_connected = TRUE
+        """
+        rows = await postgresql.query(sql, whatsapp_id)
+        return str(rows[0].get('user_id')) if rows else None
+    except Exception as e:
+        logger.error(f"Error in get_whatsapp_user_by_phone: {e}")
+        return None

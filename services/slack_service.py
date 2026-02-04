@@ -14,12 +14,12 @@ from helpers.slack_api import refresh_slack_token, publish_slack_message
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def ensure_valid_token(team_id: str):
+async def ensure_valid_token(team_id: str):
     """
     Checks if token is expired and refreshes if needed.
     Returns valid access_token.
     """
-    team_data = get_team_data(team_id)
+    team_data = await get_team_data(team_id)
     if not team_data:
         return None
     
@@ -65,9 +65,9 @@ def ensure_valid_token(team_id: str):
 
     return access_token
 
-def get_token_for_team(team_id: str):
+async def get_token_for_team(team_id: str):
     # Use the smart token retriever
-    token = ensure_valid_token(team_id)
+    token = await ensure_valid_token(team_id)
     
     if token:
         logger.info(f"Using team-specific token for team {team_id}")
@@ -77,7 +77,7 @@ def get_token_for_team(team_id: str):
     logger.warning(f"No token found for team {team_id}. Ignoring event.")
     return None
 
-def handle_event(payload):
+async def handle_event(payload):
     """
     Handle incoming Slack events (Event Subscriptions).
     Supports: url_verification, app_mention, message.im
@@ -98,7 +98,7 @@ def handle_event(payload):
     channel_id = event.channel
     
     # Get the correct token for this team
-    token = get_token_for_team(team_id)
+    token = await get_token_for_team(team_id)
     if not token:
         return {"ok": True}  # Silently ignore if disconnected from Team level (should not happen now with new logic)
 
@@ -120,7 +120,7 @@ def handle_event(payload):
         return {"ok": True}
 
     # 3. Check if User is Connected
-    vibelets_user_id = get_vibelets_user_by_slack_id(user_id)
+    vibelets_user_id = await get_vibelets_user_by_slack_id(user_id)
     
     if not vibelets_user_id:
         # User is NOT connected (or was disconnected)
@@ -170,13 +170,13 @@ def handle_event(payload):
 
 # --- PUBLIC METHODS FOR OUTSIDE USE ---
 
-def send_message_to_user(slack_user_id: str, text: str):
+async def send_message_to_user(slack_user_id: str, text: str):
     """
     Sends a message to a Slack user, automatically finding their team and token.
     This is designed for cross-service calls (like notifications).
     """
     # 1. Use optimized query to get team and token directly from slack_user_id
-    connection = get_connection_by_slack_user_id(slack_user_id)
+    connection = await get_connection_by_slack_user_id(slack_user_id)
     
     if not connection:
         logger.error(f"Notify Error: No connection found for slack_user_id={slack_user_id}")
@@ -185,7 +185,7 @@ def send_message_to_user(slack_user_id: str, text: str):
     team_id = connection.get("team_id")
     
     # 2. Get Client (using wrapper handles refresh if needed)
-    token = get_token_for_team(team_id)
+    token = await get_token_for_team(team_id)
     if not token:
         logger.error(f"Notify Error: No token found for team_id={team_id}")
         return {"ok": False, "error": "Team token not found"}
@@ -203,12 +203,12 @@ def send_message(token: str, channel_id: str, text: str):
         logger.error(f"Error sending Slack message: {str(e)}")
         return {"ok": False, "error": str(e)}
 
-def send_notification(team_id: str, channel_id: str, text: str):
+async def send_notification(team_id: str, channel_id: str, text: str):
     """
     Sends a proactive notification to a specific team and channel/user.
     Can be called from other modules.
     """
-    token = get_token_for_team(team_id)
+    token = await get_token_for_team(team_id)
     if token:
         return send_message(token, channel_id, text)
     return {"ok": False, "error": "Team not connected"}

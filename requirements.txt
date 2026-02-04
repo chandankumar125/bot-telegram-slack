@@ -9,3 +9,5 @@ google-generativeai # type: ignore
 python-telegram-bot
 psycopg2-binary
 PyJWT
+apscheduler
+asyncpg>=0.29.0

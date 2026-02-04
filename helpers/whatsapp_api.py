@@ -135,4 +135,26 @@ def format_for_whatsapp(text: str) -> str:
     # You might add more conversions here if needed (e.g., _italic_)
     
     return text
-
+def get_whatsapp_phone_info(phone_number_id: str = None, access_token: str = None) -> Dict[str, Any]:
+    """
+    Retrieve information about the WhatsApp phone number. 
+    Used as a health check for the access token.
+    """
+    p_id = phone_number_id or WHATSAPP_PHONE_NUMBER_ID
+    token = access_token or WHATSAPP_ACCESS_TOKEN
+    
+    if not p_id or not token:
+        raise Exception("WhatsApp Phone Number ID and Access Token are required.")
+        
+    try:
+        url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{p_id}"
+        headers = {
+            "Authorization": f"Bearer {token}"
+        }
+        
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+        
+    except requests.RequestException as e:
+        raise Exception(f"WhatsApp health check failed: {str(e)}")

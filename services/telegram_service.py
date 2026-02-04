@@ -73,18 +73,35 @@ async def process_telegram_message(message):
             }, indent=2))
             print("="*50 + "\n")
 
-            save_telegram_connection(vibelets_user_id, str(chat_id), username, first_name, last_name)
-            response_text = (
-                f"👋 *Hello! I'm the Vibelets Bot.*\n"
-                f"✅ *You are now successfully connected!*\n"
-                f"I can help you with insights about your ad campaigns.\n\n"
-                f"• Ask me questions like _'How is my campaign performing?'_\n"
-            )
-            await send_message(chat_id, response_text)
+            result = await save_telegram_connection(vibelets_user_id, str(chat_id), username, first_name, last_name)
+            
+            if result.get("success"):
+                for conflict in result.get("conflicts", []):
+                    old_chat_id = conflict.get('chat_id')
+                    old_user_id = conflict.get('user_id')
+
+                    # Scenario 1: Same Vibelets User, different Telegram account
+                    if str(old_user_id) == str(vibelets_user_id) and str(old_chat_id) != str(chat_id):
+                        await send_message(old_chat_id, "⚠️ *Connection Moved*: Your Vibelets account has been linked to a new Telegram account. This session is now disconnected.")
+                    
+                    # Scenario 2: Different Vibelets User, same Telegram account (Stealing)
+                    elif str(old_chat_id) == str(chat_id) and str(old_user_id) != str(vibelets_user_id):
+                        # Notify the CURRENT chat (which just got "stolen") about the change
+                        await send_message(chat_id, f"⚠️ *Account Reclaimed*: This Telegram account was previously linked to User `{old_user_id}`. It has now been linked to your current account `{vibelets_user_id}`.")
+
+                response_text = (
+                    f"👋 *Hello! I'm the Vibelets Bot.*\n"
+                    f"✅ *You are now successfully connected!*\n"
+                    f"I can help you with insights about your ad campaigns.\n\n"
+                    f"• Ask me questions like _'How is my campaign performing?'_\n"
+                )
+                await send_message(chat_id, response_text)
+            else:
+                await send_message(chat_id, f"❌ *Connection Failed*: {result.get('error', 'Unknown error')}")
             return
         
         # If no param, check if already connected
-        existing_user = get_telegram_user_by_chat_id(str(chat_id))
+        existing_user = await get_telegram_user_by_chat_id(str(chat_id))
         if existing_user:
             await send_message(chat_id, "👋 Welcome back! You are already connected. How can I help you?")
         else:
@@ -101,7 +118,7 @@ async def process_telegram_message(message):
         return
 
     # 2. Check Connection:  identifying the user for authentication
-    vibelets_user_id = get_telegram_user_by_chat_id(str(chat_id))
+    vibelets_user_id = await get_telegram_user_by_chat_id(str(chat_id))
     if not vibelets_user_id:
         await send_message(chat_id, "⚠️ Please connect your account first using the /start command with your connection token.")
         return
@@ -139,7 +156,7 @@ async def send_notification(vibelets_user_id: str, text: str):
     """
     Sends a proactive notification to a specific user.
     """
-    connection = get_telegram_connection(vibelets_user_id)
+    connection = await get_telegram_connection(vibelets_user_id)
     if connection and connection.get("connected"):
         chat_id = connection.get("chat_id")
         await send_message(chat_id, text)

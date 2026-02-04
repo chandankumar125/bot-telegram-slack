@@ -59,7 +59,7 @@ def install_bot(user_id: str = Depends(get_current_user)):
     return {"url": auth_url} 
 
 @router.get("/oauth_callback")
-def oauth_callback(code: str, state: str = None):
+async def oauth_callback(code: str, state: str = None):
     """
     Handles the callback from Slack after user authorizes the app.
     Exchanges code for access token and saves to DB.
@@ -132,43 +132,65 @@ def oauth_callback(code: str, state: str = None):
         except Exception as e:
             print(f"Failed to fetch user email: {e}")
 
-    # Save to "Database"
-    save_slack_connection(
+    # Save to "Database" and handle conflicts
+    result = await save_slack_connection(
         vibelets_user_id, team_id, team_name, access_token, bot_user_id, slack_user_id,
         refresh_token=refresh_token, expires_in=expires_in, email=email
     )
     
-    # Send Welcome Message to the User
-    if slack_user_id:
-        try:
-            welcome_msg = (
-                f"👋 *Hello! I'm the Vibelets Bot.*\n"
-                f"✅ **You are now successfully connected!**\n"
-                f"I can help you with insights about your ad campaigns.\n\n"
-                f"• Ask me questions like _'How is my campaign performing?'_\n"
-            )
-            publish_slack_message(access_token, slack_user_id, welcome_msg)
-        except Exception as e:
-            print(f"Failed to send welcome message: {e}")
+    if result.get("success"):
+        # Notify Conflict Parties
+        for conflict in result.get("conflicts", []):
+            conflict_slack_id = conflict.get('slack_user_id')
+            conflict_vibe_id = conflict.get('user_id')
+            conflict_team_id = conflict.get('team_id')
+            
+            # Get token for that team (might be different than current)
+            conflict_token = await get_team_token(conflict_team_id)
+            if not conflict_token:
+                continue
+
+            # Scenario 1: Same Vibelets user, Different Slack account
+            if str(conflict_vibe_id) == str(vibelets_user_id) and str(conflict_slack_id) != str(slack_user_id):
+                 publish_slack_message(conflict_token, conflict_slack_id, "⚠️ *Connection Moved*: Your Vibelets account has been linked to a new Slack account. This session is now disconnected.")
+            
+            # Scenario 2: Different Vibelets User, same Slack account (Stealing)
+            elif str(conflict_slack_id) == str(slack_user_id) and str(conflict_vibe_id) != str(vibelets_user_id):
+                 publish_slack_message(conflict_token, conflict_slack_id, f"⚠️ *Account Reclaimed*: This Slack account was previously linked to User `{conflict_vibe_id}`. It is now linked to your current account `{vibelets_user_id}`.")
+
+        # Send Welcome Message to the NEWLY connected user
+        if slack_user_id:
+            try:
+                welcome_msg = (
+                    f"👋 *Hello! I'm the Vibelets Bot.*\n"
+                    f"✅ **You are now successfully connected!**\n"
+                    f"I can help you with insights about your ad campaigns.\n\n"
+                    f"• Ask me questions like _'How is my campaign performing?'_\n"
+                )
+                publish_slack_message(access_token, slack_user_id, welcome_msg)
+            except Exception as e:
+                print(f"Failed to send welcome message: {e}")
+    else:
+        raise HTTPException(status_code=500, detail=f"Database error: {result.get('error')}")
     
     return RedirectResponse(
         f"{DASHBOARD_URL}?status=success&platform=slack&uid={vibelets_user_id}&team={team_name}"
     )
 
 @router.post("/disconnect")
-def disconnect_bot(user_id: str = Depends(get_current_user)):
+async def disconnect_bot(user_id: str = Depends(get_current_user)):
     """
     Disconnects the user from Slack by removing their connection details.
     """
     # 1. Get connection info BEFORE disconnecting (to send goodbye msg)
-    connection = get_slack_connection(user_id)
+    connection = await get_slack_connection(user_id)
     if connection and connection.get("connected"):
         try:
             team_id = connection.get("team_id")
             slack_user_id = connection.get("slack_user_id")
             
             # Get token to send message
-            token = get_team_token(team_id)
+            token = await get_team_token(team_id)
             
             if token and slack_user_id:
                 goodbye_msg = (
@@ -180,20 +202,20 @@ def disconnect_bot(user_id: str = Depends(get_current_user)):
             print(f"Failed to send goodbye message: {e}")
 
     # 2. Perform Disconnect
-    success = disconnect_slack_connection(user_id)
+    success = await disconnect_slack_connection(user_id)
     if success:
         return {"ok": True, "message": "Disconnected successfully"}
     return {"ok": False, "message": "User not connected or user not found"}
 
 @router.get("/status")
-def get_connection_status(user_id: str = Depends(get_current_user)):
+async def get_connection_status(user_id: str = Depends(get_current_user)):
     """
     Checks if the user is connected to Slack.
     """
-    connection = get_slack_connection(user_id)
+    connection = await get_slack_connection(user_id)
     if connection and connection.get("connected"):
         # Token is stored at Team level
-        token = get_team_token(connection.get("team_id"))
+        token = await get_team_token(connection.get("team_id"))
         return {
             "connected": True, 
             "team_name": connection.get("team_name"),

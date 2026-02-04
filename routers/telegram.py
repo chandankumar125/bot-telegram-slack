@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Depends, Header
 import json
 from services.telegram_service import handle_update, get_bot_username, send_message
 from utils.postgres_db import disconnect_telegram_connection, get_telegram_connection
@@ -10,12 +10,23 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @router.post("/webhook")
-async def telegram_webhook(update: TelegramUpdate, background_tasks: BackgroundTasks):
+async def telegram_webhook(
+    update: TelegramUpdate, 
+    background_tasks: BackgroundTasks,
+    x_telegram_secret: str = Header(None, alias="X-Telegram-Bot-Api-Secret-Token")
+):
     """
     Receives Webhook updates from Telegram.
+    Verifies that the request comes from Telegram using the secret token.
     """
-    # Process update in background to ensure fast response to Telegram
-    # access .dict() or .model_dump() depending on pydantic version, sticking to dict() for compatibility usually
+    from config import TELEGRAM_SECRET_TOKEN
+    
+    # 1. Verify Secret Token (Security Check)
+    if TELEGRAM_SECRET_TOKEN and x_telegram_secret != TELEGRAM_SECRET_TOKEN:
+        logger.warning(f"Unauthorized Telegram webhook attempt: Invalid Secret Token")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Process update in background
     payload = update.dict(by_alias=True)
     background_tasks.add_task(handle_update, payload)
     
@@ -55,7 +66,7 @@ async def disconnect_bot(user_id: str = Depends(get_current_user)):
     Disconnects the user from Telegram.
     """
     # Notify User
-    conn = get_telegram_connection(user_id)
+    conn = await get_telegram_connection(user_id)
     if conn and conn.get("connected"):
         chat_id = conn.get("chat_id")
         try:
@@ -67,12 +78,12 @@ async def disconnect_bot(user_id: str = Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"Failed to send disconnect message: {e}")
 
-    success = disconnect_telegram_connection(user_id)
+    success = await disconnect_telegram_connection(user_id)
     return {"ok": success}
 
 @router.get("/status")
-def get_status(user_id: str = Depends(get_current_user)):
-    conn = get_telegram_connection(user_id)
+async def get_status(user_id: str = Depends(get_current_user)):
+    conn = await get_telegram_connection(user_id)
     if conn and conn.get("connected"):
         return {"connected": True, "username": conn.get("username")}
     return {"connected": False}

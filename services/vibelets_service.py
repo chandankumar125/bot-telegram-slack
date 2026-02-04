@@ -76,20 +76,23 @@ async def push_notification(payload):
         
         # Check Slack
         if payload.platform in ["slack", "all"]:
-            slack_conn = get_slack_connection(payload.user_id)
+            slack_conn = await get_slack_connection(payload.user_id)
             print(f"DEBUG: Checking Slack connection for {payload.user_id}: {slack_conn}")
-            if slack_conn and slack_conn.get("connected"):
+            # get_slack_connection already filters by is_connected=TRUE, so if it returns a result, user is connected
+            if slack_conn and slack_conn.get("slack_user_id"):
                 targets.append(("slack", slack_conn.get("slack_user_id")))
+            elif slack_conn:
+                print(f"DEBUG: Warning - connection found but no slack_user_id: {slack_conn}")
         
         # Check Telegram
         if payload.platform in ["telegram", "all"]:
-            tg_conn = get_telegram_connection(payload.user_id)
+            tg_conn = await get_telegram_connection(payload.user_id)
             if tg_conn and tg_conn.get("connected"):
                 targets.append(("telegram", tg_conn.get("chat_id")))
                 
         # Check WhatsApp
         if payload.platform in ["whatsapp", "all"]:
-            wa_conn = get_whatsapp_connection(payload.user_id)
+            wa_conn = await get_whatsapp_connection(payload.user_id)
             if wa_conn and wa_conn.get("connected"):
                 # Use standard format for services: "whatsapp", phone_number
                 targets.append(("whatsapp", wa_conn.get("phone_number")))
@@ -101,14 +104,11 @@ async def push_notification(payload):
     # 2. Dispatch
     from services.slack_service import send_message_to_user as slack_send_message
     from services.telegram_service import send_message as telegram_send_message
-    import asyncio
     
     for platform, target_id in targets:
         try:
             if platform == "slack":
-                loop = asyncio.get_event_loop()
-                # Run sync wrapper in thread
-                res = await loop.run_in_executor(None, slack_send_message, target_id, msg)
+                res = await slack_send_message(target_id, msg)
                 if isinstance(res, dict) and not res.get("ok"):
                     results["slack"] = f"failed: {res.get('error')}"
                 else:

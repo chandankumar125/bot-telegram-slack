@@ -72,11 +72,11 @@ async def receive_webhook(
         raise HTTPException(status_code=400, detail="Server Error")
 
 @router.get("/status")
-def get_connection_status(user_id: str = Depends(get_current_user)):
+async def get_connection_status(user_id: str = Depends(get_current_user)):
     """
     Checks if the user is connected to WhatsApp.
     """
-    connection = get_whatsapp_connection(user_id)
+    connection = await get_whatsapp_connection(user_id)
     if connection and connection.get("connected"):
         return {
             "connected": True, 
@@ -86,17 +86,17 @@ def get_connection_status(user_id: str = Depends(get_current_user)):
     return {"connected": False}
 
 @router.post("/disconnect")
-def disconnect_bot(user_id: str = Depends(get_current_user)):
+async def disconnect_bot(user_id: str = Depends(get_current_user)):
     """
     Disconnects the user from WhatsApp.
     """
-    success = disconnect_whatsapp_connection(user_id)
+    success = await disconnect_whatsapp_connection(user_id)
     if success:
         return {"ok": True, "message": "Disconnected successfully"}
     return {"ok": False, "message": "User not connected or user not found"}
 
 @router.get("/connect")
-def get_connect_link(user_id: str = Depends(get_current_user)):
+async def get_connect_link(user_id: str = Depends(get_current_user)):
     """
     Returns the WhatsApp Deep Link to start a chat and connect.
     NOTE: In production, you'd replace 'PHONE_NUMBER' with your actual bot number.
